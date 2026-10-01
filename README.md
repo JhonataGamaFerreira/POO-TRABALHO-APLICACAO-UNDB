@@ -173,3 +173,10 @@ A tabela `historico_evento` só recebe inserções. O estado atual fica em `oper
 6. **Ocorrências e relatórios**
 7. **Testes finais e documentação**
 
+## Equipe
+
+- Jhonata: Back
+- Cássia:  Front
+- Victor:  Q.A
+- Heitor:  DevOps
+- Elcio:   TechLead
