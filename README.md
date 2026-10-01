@@ -265,7 +265,7 @@ O cliente não define as classes, então elas foram descobertas a partir do prob
 ## 🏛️ Arquitetura
 
 ```
-Front-end (HTML + CSS + JavaScript)
+Front-end (Next.js + React + TypeScript + Tailwind CSS + shadcn/ui)
         ↓
 API / Back-end (Python + FastAPI ou Flask)
         ↓
