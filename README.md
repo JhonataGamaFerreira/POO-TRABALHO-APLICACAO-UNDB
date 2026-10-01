@@ -14,20 +14,6 @@ Interface web para gerenciar a operação de um terminal portuário: controle da
 
 ---
 
-## 📋 Sobre o projeto
-
-O terminal recebe caminhões para carregar e descarregar mercadorias, mas o controle era feito por planilhas e mensagens. O sistema resolve isso com:
-
-- Validação de motorista, caminhão, transportadora, carga e documentação na chegada
-- Fila de atendimento com **prioridade** e controle de **tempo de espera**
-- Regras por tipo de carga (comum, frágil, refrigerada, perigosa, prioritária)
-- Controle de recursos limitados (vagas, docas, empilhadeiras, guindastes)
-- **Histórico completo** de cada caminhão, sem sobrescrever estados anteriores
-- Registro de **ocorrências** vinculadas às operações
-- **Relatórios** operacionais do dia
-
----
-
 ## 🏛️ Arquitetura
 
 ```
@@ -117,7 +103,7 @@ frontend/
 
 ```bash
 # 1. Clonar o repositório
-git clone <url-do-repositorio>
+git clone https://github.com/JhonataGamaFerreira/POO-TRABALHO-APLICACAO-UNDB.git
 cd POO-TRABALHO-APLICACAO-UNDB
 
 # 2. Entrar na branch do front
