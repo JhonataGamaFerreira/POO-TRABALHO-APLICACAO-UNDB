@@ -172,11 +172,128 @@ A tabela `historico_evento` só recebe inserções. O estado atual fica em `oper
 5. **Front-end:** painel, pátio, docas, equipamentos, fila e histórico
 6. **Ocorrências e relatórios**
 7. **Testes finais e documentação**
+# Requisitos do sistema: terminal portuário de caminhões
 
-## Equipe
+
+## Requisitos funcionais
+
+**RF01 – Recepção e triagem**
+- Registrar a chegada do caminhão com motorista, caminhão, transportadora, carga e tipo de operação (carga ou descarga).
+- Validar a documentação.
+- Encaminhar o caminhão para inspeção quando necessário.
+
+**RF02 – Fila de atendimento**
+- Priorizar os caminhões pelo tipo de carga.
+- Controlar o tempo de espera, para que nenhum caminhão espere indefinidamente.
+- Calcular a posição na fila pela prioridade da carga mais um bônus pelo tempo de espera, de modo que um caminhão antigo possa ultrapassar um prioritário recente.
+
+**RF03 – Alocação de recursos**
+- Alocar vagas, docas e equipamentos compatíveis com a carga.
+- Iniciar a operação somente quando houver, ao mesmo tempo, vaga ou doca, equipamento compatível e funcionário habilitado.
+
+**RF04 – Gestão de funcionários**
+- Restringir as operações que cada função pode executar.
+- Registrar quem realizou cada operação.
+
+**RF05 – Ciclo de vida do caminhão**
+- Controlar os estados: Aguardando Documentação → Aguardando Inspeção → Aguardando Entrada → No Pátio → Aguardando Recurso → Em Operação → Aguardando Liberação → Finalizado.
+- Tratar interrupções no meio do caminho, como quebra de equipamento ou irregularidade na documentação. Elas geram uma ocorrência e fazem o caminhão voltar ao estado adequado.
+
+**RF06 – Ocorrências**
+- Registrar ocorrências e vinculá-las à operação.
+- Tipos previstos: equipamento quebrado, documentação irregular, carga divergente, acidente, área interditada, atraso e cancelamento.
+
+**RF07 – Histórico**
+- Manter uma linha do tempo completa de cada caminhão ou operação.
+- Nunca sobrescrever ou apagar estados anteriores.
+
+**RF08 – Painel do terminal**
+- Mostrar em tempo real o pátio, as docas e os equipamentos.
+- Exibir os caminhões no terminal, em operação, aguardando, em inspeção e finalizados no dia.
+
+**RF09 – Relatórios**
+- Caminhões atendidos.
+- Tempo médio de espera e de operação.
+- Cargas por tipo.
+- Operações canceladas.
+- Equipamentos mais utilizados.
+- Períodos de maior movimento.
+- Caminhões que mais esperaram.
+- Quantidade de ocorrências.
+- Produtividade por operação.
+
+**RF10 – Configuração da capacidade**
+- Permitir configurar as quantidades de recursos. O exemplo do README é 3 empilhadeiras, 2 guindastes, 4 docas e 20 vagas.
+
+## Regras de negócio
+
+| Tipo de carga | Regra |
+|---|---|
+| Comum | Sem restrições |
+| Frágil | Exige equipamento específico |
+| Refrigerada | Não pode esperar indefinidamente em área sem refrigeração |
+| Perigosa | Só vai para áreas autorizadas |
+| Prioritária | Pode alterar a ordem de atendimento |
+
+- Uma carga pode combinar características, por exemplo refrigerada e prioritária.
+- As regras de negócio ficam no domínio, não nas rotas nem no front-end.
+- O sistema deve tomar decisões com base nas regras e não ser apenas um CRUD de caminhões.
+
+## Telas
+
+1. Painel do terminal
+2. Pátio (vagas livres, ocupadas ou em manutenção)
+3. Docas (carga, descarga ou livre)
+4. Equipamentos (ocupado, disponível ou em manutenção)
+5. Fila de atendimento
+6. Registro de chegada
+7. Histórico do caminhão (linha do tempo)
+8. Ocorrências
+9. Relatórios
+
+## Requisitos não funcionais e técnicos
+
+**Arquitetura em camadas:** Front-end → API → Serviços → Domínio → Repositórios → Banco.
+
+**Tecnologias:**
+- Front-end: Next.js, React, TypeScript, Tailwind CSS e shadcn/ui.
+- Back-end: Python com FastAPI ou Flask.
+- Banco de dados: SQLite ou PostgreSQL.
+
+**Padrões de projeto exigidos:**
+
+| Padrão | Aplicação |
+|---|---|
+| State | Ciclo de vida do caminhão e da operação |
+| Strategy | Política de priorização da fila |
+| Decorator | Combinação de características da carga |
+| Facade | Ponto único para os casos de uso |
+| Composite | Terminal → Áreas → Vagas/Docas |
+| Proxy | Controle de acesso por função, com registro do responsável |
+| Observer | Mudanças de estado e ocorrências geram eventos de histórico |
+| Factory | Criação de cargas, operações e ocorrências conforme o tipo |
+| Repository | Isolamento do acesso ao banco |
+
+**Persistência:**
+- Tabelas previstas: `transportadora`, `motorista`, `caminhao`, `carga`, `operacao`, `documentacao`, `inspecao`, `area`, `vaga`, `doca`, `equipamento`, `funcionario`, `operacao_equipamento`, `operacao_funcionario`, `ocorrencia` e `historico_evento`.
+- A tabela `historico_evento` aceita apenas inserções (append-only).
+- O estado atual fica em `operacao.estado`.
+
+**Qualidade:** o domínio em Python deve ter testes, e a documentação e os testes finais fazem parte do plano.
+
+**Rastreabilidade:** toda ação deve ser auditável (quem fez, quando e o que mudou), para resolver a perda de informação das planilhas atuais.
+
+## Entidades do domínio
+
+Caminhão, Motorista, Transportadora, Carga, Documentação, Inspeção, Operação, Área, Vaga, Doca, Equipamento, Funcionário, Ocorrência e Evento de Histórico. Caminhão, Operação, Equipamento, Vaga, Doca e Inspeção têm comportamento e estado próprios.
+
+
 
 - Jhonata: Back
 - Cássia:  Front
 - Victor:  Q.A
 - Heitor:  DevOps
 - Elcio:   TechLead
+
+
+
