@@ -264,15 +264,18 @@ class EstadoFluxo:
 TRANSICOES: dict[EstadoCaminhao, EstadoFluxo] = {
     EstadoCaminhao.AGUARDANDO_DOCUMENTACAO: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
-        frozenset({EstadoCaminhao.AGUARDANDO_INSPECAO, EstadoCaminhao.AGUARDANDO_ENTRADA}),
+        frozenset({EstadoCaminhao.AGUARDANDO_INSPECAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.AGUARDANDO_INSPECAO: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_INSPECAO,
-        frozenset({EstadoCaminhao.AGUARDANDO_DOCUMENTACAO, EstadoCaminhao.AGUARDANDO_ENTRADA}),
+        frozenset({EstadoCaminhao.AGUARDANDO_DOCUMENTACAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.AGUARDANDO_ENTRADA: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_ENTRADA,
-        frozenset({EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_DOCUMENTACAO}),
+        frozenset({EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.NO_PATIO: EstadoFluxo(
         EstadoCaminhao.NO_PATIO,
@@ -452,6 +455,8 @@ class Operacao:
         if self.estado in {EstadoCaminhao.FINALIZADO,
                            EstadoCaminhao.AGUARDANDO_LIBERACAO}:
             raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
+        if not TRANSICOES[self.estado].permite(EstadoCaminhao.AGUARDANDO_LIBERACAO):
+            raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
         self.cancelada = True
         self.motivo_cancelamento = motivo
         self.registrar_ocorrencia(TipoOcorrencia.CANCELAMENTO, motivo, responsavel, instante)
@@ -480,10 +485,14 @@ class AlocadorDeRecursos:
         perigosa = CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
         vaga = next((v for v in vagas if v.estado is EstadoRecurso.LIVRE
                      and not v.area.interditada
+                     and (CaracteristicaCarga.REFRIGERADA not in operacao.carga.caracteristicas
+                          or v.area.refrigerada)
                      and (not perigosa or not area_requerida_para_perigosa
                           or v.area.autorizada_carga_perigosa)), None)
         doca = next((d for d in docas if d.estado is EstadoRecurso.LIVRE
                      and not d.area.interditada and d.tipo in (None, operacao.tipo)
+                     and (CaracteristicaCarga.REFRIGERADA not in operacao.carga.caracteristicas
+                          or d.area.refrigerada)
                      and (not perigosa or not area_requerida_para_perigosa
                           or d.area.autorizada_carga_perigosa)), None)
         equipamento = next((e for e in equipamentos
@@ -547,6 +556,8 @@ class ServicoDominioTerminal:
         if operacao.estado is not EstadoCaminhao.AGUARDANDO_ENTRADA:
             raise ErroDeDominio("Operação não está liberada para entrada.")
         if (vaga.estado is not EstadoRecurso.LIVRE or vaga.area.interditada
+                or (CaracteristicaCarga.REFRIGERADA in operacao.carga.caracteristicas
+                    and not vaga.area.refrigerada)
                 or (CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
                     and not vaga.area.autorizada_carga_perigosa)):
             raise ErroDeDominio("Vaga indisponível ou inadequada para a carga.")
