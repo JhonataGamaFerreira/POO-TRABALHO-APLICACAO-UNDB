@@ -54,6 +54,14 @@
 
   --focus-ring: #0b4f6c;
 
+  /*
+   * PROPOSTA (não aprovada): hover e pressed do botão primário. A Etapa 2 do DS
+   * não definiu variáveis para Hover/Pressed/Disabled; estes dois valores são
+   * escurecimentos da cor primária só para o MVP e devem virar tokens do DS.
+   */
+  --primary-hover: #093f57;
+  --primary-pressed: #072f42;
+
   /* Mapeamento para os nomes usados pelo shadcn/ui */
   --background: var(--surface-canvas);
   --foreground: var(--text-1);
@@ -152,6 +160,8 @@
   --color-line-strong: var(--border-strong);
   --color-line-brand: var(--border-primary);
   --color-line-pattern: var(--border-pattern);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
   --color-sev-critical-bg: var(--severity-critical-bg);
   --color-sev-attention-bg: var(--severity-attention-bg);
   --color-blocked-bg: var(--pending-blocked-bg);
