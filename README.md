@@ -172,6 +172,57 @@ A tabela `historico_evento` só recebe inserções. O estado atual fica em `oper
 5. **Front-end:** painel, pátio, docas, equipamentos, fila e histórico
 6. **Ocorrências e relatórios**
 7. **Testes finais e documentação**
+
+## 🚀 API REST (armazenamento em memória)
+
+Atualmente a API permite experimentar o fluxo do domínio sem configurar banco de dados. Os registros ficam apenas na memória do processo e são apagados quando o servidor é encerrado. O repositório em memória pode ser substituído por SQLite/PostgreSQL posteriormente sem mudar os modelos de entrada da API.
+
+### Iniciar localmente
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn api:app --reload
+```
+
+Documentação interativa: http://127.0.0.1:8000/docs
+
+### Endpoints disponíveis
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/health` | Verifica a API |
+| POST, GET | `/api/areas` | Cria e lista áreas; ao criar, também pode gerar vagas e docas |
+| POST | `/api/docks` | Cadastra uma doca adicional |
+| POST | `/api/equipment` | Cadastra equipamento |
+| GET | `/api/resources` | Lista vagas, docas e equipamentos |
+| POST, GET | `/api/employees` | Cadastra e lista funcionários |
+| POST, GET | `/api/operations` | Registra e lista operações |
+| GET | `/api/operations/{id}` | Consulta uma operação, incluindo histórico e ocorrências |
+| POST, GET | `/api/trucks` | Cadastra e lista caminhões |
+| GET | `/api/trucks/{placa}` | Busca caminhão e seu histórico de operações |
+| POST | `/api/operations/{id}/documentation` | Valida documentação |
+| POST | `/api/operations/{id}/inspections` | Registra inspeção |
+| POST | `/api/operations/{id}/yard-entry` | Autoriza entrada no pátio e reserva vaga |
+| POST | `/api/operations/{id}/start` | Aloca recursos e inicia operação |
+| POST | `/api/operations/{id}/interrupt` | Registra interrupção |
+| POST | `/api/operations/{id}/cancel` | Cancela uma operação |
+| POST | `/api/operations/{id}/finish` | Finaliza operação |
+| POST | `/api/operations/{id}/release` | Libera caminhão |
+| GET | `/api/occurrences` | Lista ocorrências; aceita filtro `?estado=ABERTA` ou `RESOLVIDA` |
+| POST | `/api/occurrences/{id}/resolve` | Resolve ocorrência (supervisor ou administrador) |
+| GET | `/api/queue` | Consulta fila priorizada |
+| PUT | `/api/queue/policy` | Configura pesos da fila (supervisor ou administrador) |
+| GET | `/api/dashboard` | Resume estados das operações e recursos |
+| GET | `/api/reports/timings` | Calcula médias de espera, operação e tempo por etapa |
+
+As respostas das operações incluem `acoes_permitidas`; o front-end pode exibir os controles sem duplicar a máquina de estados. A fila é ordenada pelo algoritmo (sem reordenação manual), inclui caminhões em `NO_PATIO`, placa, carga e fatores estruturados. O bônus de espera precisa ser positivo para evitar que a fila pare de envelhecer. A ocorrência mantém os estados `ABERTA` e `RESOLVIDA`, com severidade, impacto e recurso afetado opcionais. A categoria "caminhão com problema" não foi adicionada como oitavo tipo: sem o PDF para confirmar o significado, ela permanece representada pelos tipos de ocorrência já previstos.
+
+Áreas podem ser interditadas por `PATCH /api/areas/{id}` e vagas, docas e equipamentos podem ser colocados/retirados de manutenção por `PATCH /api/resources/{tipo}/{id}/maintenance`. Essas mudanças exigem um funcionário supervisor ou administrador. A API aceita CORS de `http://localhost:3000` e `http://127.0.0.1:3000` para o front-end local.
+
+Os endpoints de ação recebem `responsavel_id`. Crie primeiro o funcionário, a área com recursos e o equipamento; a resposta da criação fornece os IDs necessários para as próximas chamadas. A função aceita os nomes `RECEPCAO`, `INSPETOR`, `OPERADOR`, `SUPERVISOR` ou `ADMINISTRADOR`; as habilitações do operador são `carga` e/ou `descarga`.
 # Requisitos do sistema: terminal portuário de caminhões
 
 

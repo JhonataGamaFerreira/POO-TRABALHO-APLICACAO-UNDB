@@ -51,6 +51,21 @@ class EstadoOcorrencia(Enum):
     RESOLVIDA = auto()
 
 
+class SeveridadeOcorrencia(Enum):
+    BAIXA = "baixa"
+    MEDIA = "media"
+    ALTA = "alta"
+    CRITICA = "critica"
+
+
+class ImpactoOcorrencia(Enum):
+    OPERACAO = "operacao"
+    RECURSO = "recurso"
+    SEGURANCA = "seguranca"
+    AMBIENTAL = "ambiental"
+    OUTRO = "outro"
+
+
 class TipoOcorrencia(Enum):
     EQUIPAMENTO_QUEBRADO = auto()
     DOCUMENTACAO_IRREGULAR = auto()
@@ -221,6 +236,7 @@ class FilaAtendimento:
         agora = instante or agora_utc()
         aguardando = [op for op in operacoes if op.estado in {
             EstadoCaminhao.AGUARDANDO_ENTRADA,
+            EstadoCaminhao.NO_PATIO,
             EstadoCaminhao.AGUARDANDO_RECURSO,
         }]
         aguardando.sort(key=lambda op: (
@@ -264,15 +280,18 @@ class EstadoFluxo:
 TRANSICOES: dict[EstadoCaminhao, EstadoFluxo] = {
     EstadoCaminhao.AGUARDANDO_DOCUMENTACAO: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
-        frozenset({EstadoCaminhao.AGUARDANDO_INSPECAO, EstadoCaminhao.AGUARDANDO_ENTRADA}),
+        frozenset({EstadoCaminhao.AGUARDANDO_INSPECAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.AGUARDANDO_INSPECAO: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_INSPECAO,
-        frozenset({EstadoCaminhao.AGUARDANDO_DOCUMENTACAO, EstadoCaminhao.AGUARDANDO_ENTRADA}),
+        frozenset({EstadoCaminhao.AGUARDANDO_DOCUMENTACAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.AGUARDANDO_ENTRADA: EstadoFluxo(
         EstadoCaminhao.AGUARDANDO_ENTRADA,
-        frozenset({EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_DOCUMENTACAO}),
+        frozenset({EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
     ),
     EstadoCaminhao.NO_PATIO: EstadoFluxo(
         EstadoCaminhao.NO_PATIO,
@@ -310,6 +329,10 @@ class Ocorrencia:
     estado: EstadoOcorrencia = EstadoOcorrencia.ABERTA
     resolvida_em: datetime | None = None
     resolvida_por: UUID | None = None
+    severidade: SeveridadeOcorrencia = SeveridadeOcorrencia.MEDIA
+    impacto: ImpactoOcorrencia = ImpactoOcorrencia.OPERACAO
+    recurso_tipo: str | None = None
+    recurso_id: UUID | None = None
 
     def resolver(self, responsavel: Funcionario, instante: datetime | None = None) -> None:
         if self.estado is EstadoOcorrencia.RESOLVIDA:
@@ -352,6 +375,20 @@ class Operacao:
     @property
     def inspecoes(self) -> tuple[Inspecao, ...]:
         return tuple(self._inspecoes)
+
+    @property
+    def acoes_permitidas(self) -> tuple[str, ...]:
+        por_estado = {
+            EstadoCaminhao.AGUARDANDO_DOCUMENTACAO: ("documentation", "cancel"),
+            EstadoCaminhao.AGUARDANDO_INSPECAO: ("inspection", "cancel"),
+            EstadoCaminhao.AGUARDANDO_ENTRADA: ("yard-entry", "cancel"),
+            EstadoCaminhao.NO_PATIO: ("start", "interrupt", "cancel"),
+            EstadoCaminhao.AGUARDANDO_RECURSO: ("start", "interrupt", "cancel"),
+            EstadoCaminhao.EM_OPERACAO: ("finish", "interrupt"),
+            EstadoCaminhao.AGUARDANDO_LIBERACAO: ("release",),
+            EstadoCaminhao.FINALIZADO: (),
+        }
+        return por_estado[self.estado]
 
     def adicionar_observador(self, observador: ObservadorDominio) -> None:
         self._observadores.append(observador)
@@ -420,18 +457,30 @@ class Operacao:
 
     def interromper(self, descricao: str, responsavel: Funcionario,
                     equipamento_quebrado: bool = False,
-                    instante: datetime | None = None) -> None:
+                    instante: datetime | None = None,
+                    severidade: SeveridadeOcorrencia = SeveridadeOcorrencia.MEDIA,
+                    impacto: ImpactoOcorrencia = ImpactoOcorrencia.OPERACAO,
+                    recurso_tipo: str | None = None,
+                    recurso_id: UUID | None = None) -> None:
+        if self.estado not in {EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_RECURSO,
+                               EstadoCaminhao.EM_OPERACAO}:
+            raise ErroDeDominio("Só é possível interromper uma operação no pátio ou em andamento.")
         tipo = (TipoOcorrencia.EQUIPAMENTO_QUEBRADO if equipamento_quebrado
                 else TipoOcorrencia.ATRASO)
-        self.registrar_ocorrencia(tipo, descricao, responsavel, instante)
+        ocorrencia = self.registrar_ocorrencia(tipo, descricao, responsavel, instante)
+        ocorrencia.severidade = severidade
+        ocorrencia.impacto = impacto
+        ocorrencia.recurso_tipo = recurso_tipo
+        ocorrencia.recurso_id = recurso_id
         if equipamento_quebrado and self.equipamento:
             self.equipamento.estado = EstadoRecurso.EM_MANUTENCAO
-        self.liberar_recursos()
+        # O caminhão permanece na vaga do pátio enquanto aguarda outro conjunto de recursos.
+        self.liberar_recursos(manter_vaga=True)
         if self.estado is EstadoCaminhao.EM_OPERACAO:
             self._mudar_estado(EstadoCaminhao.AGUARDANDO_RECURSO, responsavel, instante)
 
-    def liberar_recursos(self) -> None:
-        if self.vaga:
+    def liberar_recursos(self, manter_vaga: bool = False) -> None:
+        if self.vaga and not manter_vaga:
             self.vaga.estado = EstadoRecurso.LIVRE
             self.vaga.operacao_id = None
             self.vaga = None
@@ -451,6 +500,8 @@ class Operacao:
             raise ErroDeDominio("Cancelamento exige motivo.")
         if self.estado in {EstadoCaminhao.FINALIZADO,
                            EstadoCaminhao.AGUARDANDO_LIBERACAO}:
+            raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
+        if not TRANSICOES[self.estado].permite(EstadoCaminhao.AGUARDANDO_LIBERACAO):
             raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
         self.cancelada = True
         self.motivo_cancelamento = motivo
@@ -478,12 +529,25 @@ class AlocadorDeRecursos:
             raise ErroDeDominio(f"Funcionário não está habilitado para {precisa}.")
 
         perigosa = CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
-        vaga = next((v for v in vagas if v.estado is EstadoRecurso.LIVRE
+        refrigerada = CaracteristicaCarga.REFRIGERADA in operacao.carga.caracteristicas
+        vaga_atual = operacao.vaga
+        vaga_atual_valida = bool(
+            vaga_atual and vaga_atual in vagas
+            and vaga_atual.estado is EstadoRecurso.OCUPADO
+            and vaga_atual.operacao_id == operacao.id
+            and not vaga_atual.area.interditada
+            and (not refrigerada or vaga_atual.area.refrigerada)
+            and (not perigosa or not area_requerida_para_perigosa
+                 or vaga_atual.area.autorizada_carga_perigosa)
+        )
+        vaga = vaga_atual if vaga_atual_valida else next((v for v in vagas if v.estado is EstadoRecurso.LIVRE
                      and not v.area.interditada
+                     and (not refrigerada or v.area.refrigerada)
                      and (not perigosa or not area_requerida_para_perigosa
                           or v.area.autorizada_carga_perigosa)), None)
         doca = next((d for d in docas if d.estado is EstadoRecurso.LIVRE
                      and not d.area.interditada and d.tipo in (None, operacao.tipo)
+                     and (not refrigerada or d.area.refrigerada)
                      and (not perigosa or not area_requerida_para_perigosa
                           or d.area.autorizada_carga_perigosa)), None)
         equipamento = next((e for e in equipamentos
@@ -495,6 +559,9 @@ class AlocadorDeRecursos:
 
         # Commit das reservas ocorre apenas depois da validação do conjunto completo.
         quando = instante or agora_utc()
+        if operacao.vaga and operacao.vaga is not vaga:
+            operacao.vaga.estado = EstadoRecurso.LIVRE
+            operacao.vaga.operacao_id = None
         vaga.estado = EstadoRecurso.OCUPADO
         vaga.operacao_id = operacao.id
         doca.estado = EstadoRecurso.OCUPADO
@@ -547,6 +614,8 @@ class ServicoDominioTerminal:
         if operacao.estado is not EstadoCaminhao.AGUARDANDO_ENTRADA:
             raise ErroDeDominio("Operação não está liberada para entrada.")
         if (vaga.estado is not EstadoRecurso.LIVRE or vaga.area.interditada
+                or (CaracteristicaCarga.REFRIGERADA in operacao.carga.caracteristicas
+                    and not vaga.area.refrigerada)
                 or (CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
                     and not vaga.area.autorizada_carga_perigosa)):
             raise ErroDeDominio("Vaga indisponível ou inadequada para a carga.")

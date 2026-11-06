@@ -9,20 +9,29 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from main import (
     AlocadorDeRecursos, Area, Carga, Caminhao, CaracteristicaCarga, Doca,
-    Equipamento, ErroDeDominio, EstadoCaminhao, EstadoRecurso,
+    Equipamento, ErroDeDominio, EstadoCaminhao, EstadoOcorrencia, EstadoRecurso,
     FabricaOperacao, FilaAtendimento, FuncaoFuncionario, Funcionario,
-    Motorista, Operacao, PoliticaFila, ServicoDominioTerminal,
-    TipoOperacao, Transportadora, Vaga,
+    ImpactoOcorrencia, Motorista, Operacao, Ocorrencia, PoliticaFila,
+    SeveridadeOcorrencia, ServicoDominioTerminal, TipoOperacao,
+    TipoEvento, Transportadora, Vaga,
 )
 
 app = FastAPI(
     title="API do Terminal Portuário",
     description="API REST em memória; os dados são apagados ao reiniciar o processo.",
     version="1.0.0",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -31,6 +40,7 @@ class RepositorioEmMemoria:
 
     def __init__(self) -> None:
         self.operacoes: dict[UUID, Operacao] = {}
+        self.caminhoes: dict[UUID, Caminhao] = {}
         self.areas: dict[UUID, Area] = {}
         self.vagas: dict[UUID, Vaga] = {}
         self.docas: dict[UUID, Doca] = {}
@@ -40,13 +50,20 @@ class RepositorioEmMemoria:
 
 repositorio = RepositorioEmMemoria()
 servico = ServicoDominioTerminal(AlocadorDeRecursos())
+politica_fila = PoliticaFila({
+    CaracteristicaCarga.PRIORITARIA: 100,
+    CaracteristicaCarga.PERIGOSA: 50,
+    CaracteristicaCarga.REFRIGERADA: 30,
+    CaracteristicaCarga.FRAGIL: 20,
+}, 0.5)
 
 
 class OperacaoEntrada(BaseModel):
-    nome_motorista: str = Field(min_length=1)
-    documento_motorista: str = Field(min_length=1)
-    placa: str = Field(min_length=1)
-    transportadora: str = Field(min_length=1)
+    caminhao_id: UUID | None = None
+    nome_motorista: str | None = None
+    documento_motorista: str | None = None
+    placa: str | None = None
+    transportadora: str | None = None
     descricao_carga: str = Field(min_length=1)
     caracteristicas: list[CaracteristicaCarga] = Field(min_length=1)
     tipo: TipoOperacao
@@ -73,6 +90,23 @@ class EquipamentoEntrada(BaseModel):
     nome: str = Field(min_length=1)
     tipos_compativeis: list[TipoOperacao] = Field(min_length=1)
     aceita_carga_fragil: bool = False
+
+
+class CaminhaoEntrada(BaseModel):
+    nome_motorista: str = Field(min_length=1)
+    documento_motorista: str = Field(min_length=1)
+    placa: str = Field(min_length=1)
+    transportadora: str = Field(min_length=1)
+
+
+class AreaAtualizacao(BaseModel):
+    interditada: bool
+    responsavel_id: UUID
+
+
+class ManutencaoAtualizacao(BaseModel):
+    em_manutencao: bool
+    responsavel_id: UUID
 
 
 class FuncionarioEntrada(BaseModel):
@@ -105,6 +139,10 @@ class InterrupcaoEntrada(BaseModel):
     descricao: str = Field(min_length=1)
     responsavel_id: UUID
     equipamento_quebrado: bool = False
+    severidade: SeveridadeOcorrencia = SeveridadeOcorrencia.MEDIA
+    impacto: ImpactoOcorrencia = ImpactoOcorrencia.OPERACAO
+    recurso_tipo: str | None = None
+    recurso_id: UUID | None = None
 
 
 class CancelamentoEntrada(BaseModel):
@@ -113,6 +151,7 @@ class CancelamentoEntrada(BaseModel):
 
 
 class PoliticaFilaEntrada(BaseModel):
+    responsavel_id: UUID
     pesos: dict[CaracteristicaCarga, float] = Field(default_factory=lambda: {
         CaracteristicaCarga.PRIORITARIA: 100,
         CaracteristicaCarga.PERIGOSA: 50,
@@ -122,8 +161,15 @@ class PoliticaFilaEntrada(BaseModel):
     bonus_por_minuto: float = 0.5
 
 
+class ResolucaoOcorrenciaEntrada(BaseModel):
+    responsavel_id: UUID
+
+
 def serializar(valor: Any) -> Any:
     if isinstance(valor, Operacao):
+        agora = datetime.now().astimezone()
+        fim_espera = valor.iniciada_em or agora
+        fim_operacao = valor.finalizada_em or agora
         return {
             "id": serializar(valor.id),
             "caminhao": serializar(valor.caminhao),
@@ -143,6 +189,12 @@ def serializar(valor: Any) -> Any:
             "historico": serializar(valor.historico),
             "ocorrencias": serializar(valor.ocorrencias),
             "inspecoes": serializar(valor.inspecoes),
+            "acoes_permitidas": list(valor.acoes_permitidas),
+            "tempos_minutos": {
+                "espera": round(max(0.0, (fim_espera - valor.chegada_em).total_seconds() / 60), 2),
+                "operacao": round(max(0.0, (fim_operacao - valor.iniciada_em).total_seconds() / 60), 2)
+                if valor.iniciada_em else 0.0,
+            },
         }
     if isinstance(valor, UUID):
         return str(valor)
@@ -179,6 +231,13 @@ def obter_area(area_id: UUID) -> Area:
     if area is None:
         raise HTTPException(status_code=404, detail="Área não encontrada.")
     return area
+
+
+def exigir_supervisor(funcionario_id: UUID) -> Funcionario:
+    funcionario = obter_funcionario(funcionario_id)
+    if funcionario.funcao not in {FuncaoFuncionario.SUPERVISOR, FuncaoFuncionario.ADMINISTRADOR}:
+        raise HTTPException(status_code=403, detail="Ação reservada à supervisão ou administração.")
+    return funcionario
 
 
 def validar_recurso_id(recurso_id: UUID, recursos: dict, nome: str):
@@ -224,6 +283,19 @@ def listar_areas():
     return [serializar(area) for area in repositorio.areas.values()]
 
 
+@app.patch("/api/areas/{area_id}")
+def atualizar_area(area_id: UUID, dados: AreaAtualizacao):
+    area = obter_area(area_id)
+    exigir_supervisor(dados.responsavel_id)
+    if dados.interditada and any(
+        recurso.area.id == area_id and recurso.estado is EstadoRecurso.OCUPADO
+        for recurso in [*repositorio.vagas.values(), *repositorio.docas.values()]
+    ):
+        raise HTTPException(status_code=409, detail="Libere os recursos ocupados antes de interditar a área.")
+    area.interditada = dados.interditada
+    return serializar(area)
+
+
 @app.post("/api/docks", status_code=201)
 def criar_doca(dados: DocaEntrada):
     doca = Doca(uuid4(), obter_area(dados.area_id), dados.tipo)
@@ -237,6 +309,23 @@ def criar_equipamento(dados: EquipamentoEntrada):
                               dados.aceita_carga_fragil)
     repositorio.equipamentos[equipamento.id] = equipamento
     return serializar(equipamento)
+
+
+@app.patch("/api/resources/{tipo}/{recurso_id}/maintenance")
+def atualizar_manutencao(tipo: str, recurso_id: UUID, dados: ManutencaoAtualizacao):
+    exigir_supervisor(dados.responsavel_id)
+    colecoes = {"vaga": repositorio.vagas, "doca": repositorio.docas,
+                "equipment": repositorio.equipamentos}
+    if tipo not in colecoes:
+        raise HTTPException(status_code=404, detail="Tipo de recurso inválido; use vaga, doca ou equipment.")
+    recurso = validar_recurso_id(recurso_id, colecoes[tipo], "Recurso")
+    if recurso.estado is EstadoRecurso.OCUPADO:
+        raise HTTPException(status_code=409, detail="Não é possível alterar manutenção de recurso ocupado.")
+    if tipo == "equipment":
+        recurso.estado = EstadoRecurso.EM_MANUTENCAO if dados.em_manutencao else EstadoRecurso.DISPONIVEL
+    else:
+        recurso.estado = EstadoRecurso.EM_MANUTENCAO if dados.em_manutencao else EstadoRecurso.LIVRE
+    return serializar(recurso)
 
 
 @app.get("/api/resources")
@@ -266,11 +355,54 @@ def listar_funcionarios():
     return [serializar(f) for f in repositorio.funcionarios.values()]
 
 
-@app.post("/api/operations", status_code=201)
-def criar_operacao(dados: OperacaoEntrada):
+@app.post("/api/trucks", status_code=201)
+def cadastrar_caminhao(dados: CaminhaoEntrada):
+    placa = dados.placa.strip().upper()
+    if any(c.placa == placa for c in repositorio.caminhoes.values()):
+        raise HTTPException(status_code=409, detail="Já existe caminhão cadastrado com essa placa.")
     motorista = Motorista(uuid4(), dados.nome_motorista.strip(), dados.documento_motorista.strip())
     transportadora = Transportadora(uuid4(), dados.transportadora.strip())
-    caminhao = Caminhao(uuid4(), dados.placa, motorista, transportadora)
+    caminhao = Caminhao(uuid4(), placa, motorista, transportadora)
+    repositorio.caminhoes[caminhao.id] = caminhao
+    return serializar(caminhao)
+
+
+@app.get("/api/trucks")
+def listar_caminhoes():
+    return [serializar(c) for c in repositorio.caminhoes.values()]
+
+
+@app.get("/api/trucks/{placa}")
+def buscar_caminhao(placa: str):
+    caminhao = next((c for c in repositorio.caminhoes.values()
+                     if c.placa == placa.strip().upper()), None)
+    if caminhao is None:
+        raise HTTPException(status_code=404, detail="Caminhão não encontrado.")
+    return {"caminhao": serializar(caminhao),
+            "operacoes": [serializar(op) for op in repositorio.operacoes.values()
+                          if op.caminhao.id == caminhao.id]}
+
+
+@app.post("/api/operations", status_code=201)
+def criar_operacao(dados: OperacaoEntrada):
+    if dados.caminhao_id:
+        caminhao = repositorio.caminhoes.get(dados.caminhao_id)
+        if caminhao is None:
+            raise HTTPException(status_code=404, detail="Caminhão não encontrado.")
+    else:
+        campos = (dados.nome_motorista, dados.documento_motorista, dados.placa, dados.transportadora)
+        if not all(campo and campo.strip() for campo in campos):
+            raise HTTPException(status_code=422, detail=(
+                "Informe caminhao_id ou os dados de motorista, placa e transportadora."
+            ))
+        motorista = Motorista(uuid4(), dados.nome_motorista.strip(), dados.documento_motorista.strip())
+        transportadora = Transportadora(uuid4(), dados.transportadora.strip())
+        caminhao = Caminhao(uuid4(), dados.placa, motorista, transportadora)
+        existente = next((c for c in repositorio.caminhoes.values() if c.placa == caminhao.placa), None)
+        if existente:
+            caminhao = existente
+        else:
+            repositorio.caminhoes[caminhao.id] = caminhao
     carga = Carga(dados.descricao_carga.strip(), frozenset(dados.caracteristicas))
     operacao = FabricaOperacao.criar(caminhao, carga, dados.tipo,
                                      dados.documentacao_regular, dados.exige_inspecao,
@@ -304,6 +436,42 @@ def registrar_inspecao(operacao_id: UUID, dados: InspecaoEntrada):
     return serializar(operacao)
 
 
+@app.get("/api/occurrences")
+def listar_ocorrencias(estado: str | None = None):
+    estado_filtro = None
+    if estado:
+        try:
+            estado_filtro = EstadoOcorrencia[estado.strip().upper()]
+        except KeyError:
+            raise HTTPException(status_code=422, detail="estado deve ser ABERTA ou RESOLVIDA.")
+    resultado = []
+    for operacao in repositorio.operacoes.values():
+        for ocorrencia in operacao.ocorrencias:
+            if estado_filtro is None or ocorrencia.estado is estado_filtro:
+                resultado.append({"operacao_id": str(operacao.id), **serializar(ocorrencia)})
+    return resultado
+
+
+@app.get("/api/operations/{operacao_id}/occurrences")
+def listar_ocorrencias_operacao(operacao_id: UUID):
+    return [serializar(o) for o in obter_operacao(operacao_id).ocorrencias]
+
+
+@app.post("/api/occurrences/{ocorrencia_id}/resolve")
+def resolver_ocorrencia(ocorrencia_id: UUID, dados: ResolucaoOcorrenciaEntrada):
+    responsavel = exigir_supervisor(dados.responsavel_id)
+    for operacao in repositorio.operacoes.values():
+        ocorrencia = next((o for o in operacao.ocorrencias if o.id == ocorrencia_id), None)
+        if ocorrencia:
+            ocorrencia.resolver(responsavel)
+            operacao._registrar_evento(
+                TipoEvento.OCORRENCIA, responsavel,
+                f"Ocorrência {ocorrencia.id} resolvida.", ocorrencia.resolvida_em,
+            )
+            return {"operacao_id": str(operacao.id), **serializar(ocorrencia)}
+    raise HTTPException(status_code=404, detail="Ocorrência não encontrada.")
+
+
 @app.post("/api/operations/{operacao_id}/yard-entry")
 def autorizar_entrada(operacao_id: UUID, dados: EntradaPatio):
     operacao = obter_operacao(operacao_id)
@@ -325,8 +493,18 @@ def iniciar_operacao(operacao_id: UUID, dados: AcaoFuncionario):
 @app.post("/api/operations/{operacao_id}/interrupt")
 def interromper_operacao(operacao_id: UUID, dados: InterrupcaoEntrada):
     operacao = obter_operacao(operacao_id)
+    if dados.recurso_tipo or dados.recurso_id:
+        if not dados.recurso_tipo or not dados.recurso_id:
+            raise HTTPException(status_code=422, detail="Informe recurso_tipo e recurso_id juntos.")
+        colecoes = {"area": repositorio.areas, "vaga": repositorio.vagas, "doca": repositorio.docas,
+                    "equipment": repositorio.equipamentos}
+        if dados.recurso_tipo not in colecoes:
+            raise HTTPException(status_code=422, detail="recurso_tipo deve ser area, vaga, doca ou equipment.")
+        validar_recurso_id(dados.recurso_id, colecoes[dados.recurso_tipo], "Recurso")
     operacao.interromper(dados.descricao, obter_funcionario(dados.responsavel_id),
-                         dados.equipamento_quebrado)
+                         dados.equipamento_quebrado,
+                         severidade=dados.severidade, impacto=dados.impacto,
+                         recurso_tipo=dados.recurso_tipo, recurso_id=dados.recurso_id)
     return serializar(operacao)
 
 
@@ -352,15 +530,45 @@ def liberar_caminhao(operacao_id: UUID, dados: AcaoFuncionario):
 
 
 @app.get("/api/queue")
-def listar_fila(bonus_por_minuto: float = 0.5):
-    politica = PoliticaFila({
-        CaracteristicaCarga.PRIORITARIA: 100,
-        CaracteristicaCarga.PERIGOSA: 50,
-        CaracteristicaCarga.REFRIGERADA: 30,
-        CaracteristicaCarga.FRAGIL: 20,
-    }, bonus_por_minuto)
+def listar_fila():
+    agora = datetime.now().astimezone()
+    politica = politica_fila
     fila = FilaAtendimento(politica).ordenar(repositorio.operacoes.values())
-    return [serializar(item) for item in fila]
+    resultado = []
+    for item in fila:
+        operacao = repositorio.operacoes[item.operacao_id]
+        caracteristicas = [
+            {"tipo": "caracteristica", "caracteristica": c.value,
+             "peso": politica.pesos.get(c, 0.0)}
+            for c in sorted(operacao.carga.caracteristicas, key=lambda c: c.value)
+        ]
+        caracteristicas.append({
+            "tipo": "tempo_espera", "minutos": item.espera_minutos,
+            "bonus_por_minuto": politica.bonus_por_minuto,
+            "pontos": item.espera_minutos * politica.bonus_por_minuto,
+        })
+        resultado.append({
+            "operacao_id": str(item.operacao_id),
+            "placa": operacao.caminhao.placa,
+            "carga": serializar(operacao.carga),
+            "estado": serializar(operacao.estado),
+            "posicao": item.posicao,
+            "espera_minutos": item.espera_minutos,
+            "pontuacao": item.pontuacao,
+            "fatores": caracteristicas,
+        })
+    return resultado
+
+
+@app.put("/api/queue/policy")
+def atualizar_politica_fila(dados: PoliticaFilaEntrada):
+    exigir_supervisor(dados.responsavel_id)
+    if dados.bonus_por_minuto <= 0 or any(peso < 0 for peso in dados.pesos.values()):
+        raise HTTPException(status_code=422, detail="Pesos não podem ser negativos e o bônus por minuto deve ser positivo.")
+    global politica_fila
+    politica_fila = PoliticaFila(dict(dados.pesos), dados.bonus_por_minuto)
+    return {"pesos": serializar(politica_fila.pesos),
+            "bonus_por_minuto": politica_fila.bonus_por_minuto}
 
 
 @app.get("/api/dashboard")
@@ -378,4 +586,40 @@ def painel():
             "equipamentos": {estado.name: sum(e.estado is estado for e in repositorio.equipamentos.values())
                              for estado in EstadoRecurso},
         },
+    }
+
+
+@app.get("/api/reports/timings")
+def relatorio_tempos():
+    agora = datetime.now().astimezone()
+    esperas = []
+    duracoes = []
+    por_estado: dict[str, list[float]] = {}
+    for operacao in repositorio.operacoes.values():
+        instante_inicio = operacao.iniciada_em
+        fim_espera = instante_inicio or agora
+        esperas.append(max(0.0, (fim_espera - operacao.chegada_em).total_seconds() / 60))
+        if instante_inicio:
+            fim = operacao.finalizada_em or agora
+            duracoes.append(max(0.0, (fim - instante_inicio).total_seconds() / 60))
+        eventos_estado = [e for e in operacao.historico if e.estado_novo is not None]
+        inicio_estado = operacao.chegada_em
+        estado_atual = eventos_estado[0].estado_anterior if eventos_estado else operacao.estado
+        for evento in eventos_estado:
+            if estado_atual is not None:
+                por_estado.setdefault(estado_atual.name, []).append(
+                    max(0.0, (evento.ocorrido_em - inicio_estado).total_seconds() / 60)
+                )
+            inicio_estado = evento.ocorrido_em
+            estado_atual = evento.estado_novo
+        if estado_atual is not None:
+            por_estado.setdefault(estado_atual.name, []).append(
+                max(0.0, (agora - inicio_estado).total_seconds() / 60)
+            )
+    media = lambda valores: round(sum(valores) / len(valores), 2) if valores else 0.0
+    return {
+        "media_espera_minutos": media(esperas),
+        "media_operacao_minutos": media(duracoes),
+        "media_por_etapa_minutos": {estado: media(valores) for estado, valores in por_estado.items()},
+        "amostras": {"espera": len(esperas), "operacao": len(duracoes)},
     }
