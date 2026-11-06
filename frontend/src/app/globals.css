@@ -2,14 +2,100 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/*
+ * Tokens do Design System do terminal (Figma, página 09). Somente tema claro.
+ * Os valores vieram dos registros locais da Etapa 1 e NÃO foram reconferidos
+ * no arquivo do Figma nesta entrega. Tokens com a marca PENDENTE dependem de
+ * decisão do back-end ou da equipe e não devem ser tratados como definitivos.
+ */
+:root {
+  /* Superfícies */
+  --surface-default: #ffffff;
+  --surface-canvas: #f3f5f7;
+  --surface-selected: #e3eff5;
+  --surface-occupied: #eaf1f6;
+
+  /* Texto */
+  --text-1: #0f1b2a;
+  --text-2: #3b4a5c;
+  --text-3: #5b6675;
+  --text-primary: #0b4f6c;
+  --text-on-primary: #ffffff;
+  --text-on-primary-muted: #cfe3ec;
+  --text-critical: #b42318;
+  --text-attention: #b45309;
+  --text-attention-strong: #92400e;
+
+  /* Bordas */
+  --border-default: #d8dee5;
+  --border-resource: #6b7f90;
+  --border-strong: #3b4a5c;
+  --border-primary: #0b4f6c;
+  --border-critical: #b42318;
+  --border-attention: #b45309;
+  --border-pattern: #b8c1cc;
+
+  /* Severidade */
+  --severity-critical-bg: #fbf1f0;
+  --severity-critical-solid: #b42318;
+  --severity-attention-bg: #fef3c7;
+  --severity-attention-solid: #b45309;
+
+  /* Estado do recurso (PENDENTE: Bloqueado/Quebrado, ver pending-state) */
+  --resource-free-bg: #ffffff;
+  --resource-free-border: #0b4f6c;
+  --resource-occupied-bg: #eaf1f6;
+  --resource-occupied-border: #6b7f90;
+  --resource-maintenance-bg: #f3f5f7;
+  --resource-maintenance-pattern: #b8c1cc;
+  /* PENDENTE: aproximação provisória (critical/700 a 40%); #C9A5A0 não é usado */
+  --pending-blocked-border: #b42318;
+  --pending-blocked-bg: #fbf1f0;
+
+  --focus-ring: #0b4f6c;
+
+  /* Mapeamento para os nomes usados pelo shadcn/ui */
+  --background: var(--surface-canvas);
+  --foreground: var(--text-1);
+  --card: var(--surface-default);
+  --card-foreground: var(--text-1);
+  --popover: var(--surface-default);
+  --popover-foreground: var(--text-1);
+  --primary: var(--border-primary);
+  --primary-foreground: var(--text-on-primary);
+  --secondary: var(--surface-canvas);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--surface-canvas);
+  --muted-foreground: var(--text-3);
+  --accent: var(--surface-selected);
+  --accent-foreground: var(--text-1);
+  --destructive: var(--text-critical);
+  --border: var(--border-default);
+  --input: var(--border-resource);
+  --ring: var(--focus-ring);
+  --chart-1: #0b4f6c;
+  --chart-2: #6b7f90;
+  --chart-3: #b8c1cc;
+  --chart-4: #3b4a5c;
+  --chart-5: #d8dee5;
+  --radius: 0.5rem;
+  --sidebar: var(--surface-default);
+  --sidebar-foreground: var(--text-1);
+  --sidebar-primary: var(--border-primary);
+  --sidebar-primary-foreground: var(--text-on-primary);
+  --sidebar-accent: var(--surface-selected);
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: var(--border-default);
+  --sidebar-ring: var(--focus-ring);
+}
 
 @theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-heading: var(--font-sans);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,75 +132,33 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-}
 
-:root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Tokens do DS como utilitários: bg-surface-canvas, text-t1, border-line... */
+  --color-surface: var(--surface-default);
+  --color-canvas: var(--surface-canvas);
+  --color-selected: var(--surface-selected);
+  --color-occupied: var(--surface-occupied);
+  --color-t1: var(--text-1);
+  --color-t2: var(--text-2);
+  --color-t3: var(--text-3);
+  --color-brand: var(--text-primary);
+  --color-on-brand: var(--text-on-primary);
+  --color-on-brand-muted: var(--text-on-primary-muted);
+  --color-critical: var(--text-critical);
+  --color-attention: var(--text-attention);
+  --color-attention-strong: var(--text-attention-strong);
+  --color-line: var(--border-default);
+  --color-line-resource: var(--border-resource);
+  --color-line-strong: var(--border-strong);
+  --color-line-brand: var(--border-primary);
+  --color-line-pattern: var(--border-pattern);
+  --color-sev-critical-bg: var(--severity-critical-bg);
+  --color-sev-attention-bg: var(--severity-attention-bg);
+  --color-blocked-bg: var(--pending-blocked-bg);
+  --color-blocked-line: var(--pending-blocked-border);
+  --radius-ds-sm: 4px;
+  --radius-ds-md: 6px;
+  --radius-ds-lg: 8px;
 }
 
 @layer base {
@@ -123,8 +167,34 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
   }
-  html {
-    @apply font-sans;
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
+}
+
+/* Hachuras: o padrão sempre vem acompanhado de rótulo em texto. */
+.hatch-maintenance {
+  background-color: var(--resource-maintenance-bg);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 6px,
+    var(--resource-maintenance-pattern) 6px 7px
+  );
+}
+.hatch-blocked {
+  background-color: var(--pending-blocked-bg);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--pending-blocked-border) 40%, transparent) 6px 7px
+    ),
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--pending-blocked-border) 40%, transparent) 6px 7px
+    );
 }

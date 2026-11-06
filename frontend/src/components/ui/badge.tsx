@@ -18,6 +18,11 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        /* Tons do Design System (Badge · Tone): Primary, Neutral, Critical, Attention */
+        brand: "bg-line-brand text-on-brand",
+        neutral: "bg-canvas text-t2 border-line",
+        critical: "bg-sev-critical-bg text-critical",
+        attention: "bg-sev-attention-bg text-attention-strong",
       },
     },
     defaultVariants: {
