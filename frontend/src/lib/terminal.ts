@@ -17,6 +17,7 @@ import type {
   TipoOcorrencia,
   Vaga,
 } from "@/types/terminal";
+import type { RecursosProposta } from "@/types/terminal-proposto";
 
 /* ---------- Etapas do fluxo (8 estados do caminhão) ---------- */
 
@@ -74,9 +75,9 @@ export const ROTULO_IMPACTO: Record<ImpactoOcorrencia, string> = {
 
 export const ROTULO_SEVERIDADE: Record<SeveridadeOcorrencia, string> = {
   baixa: "Baixa",
-  media: "Média",
-  alta: "Alta",
-  critica: "Crítica",
+  media: "Atenção",
+  alta: "Atenção",
+  critica: "Crítico",
 };
 
 export type NivelVisual = "critical" | "attention" | "none";
@@ -98,6 +99,14 @@ export function rotuloCaracteristica(c: CaracteristicaCarga): string {
 
 export const resumoCarga = (carga: { descricao: string; caracteristicas: CaracteristicaCarga[] }) =>
   carga.caracteristicas.map(rotuloCaracteristica).join(", ");
+
+/** Características que diferenciam a carga ("comum" não entra). */
+export const caracteristicasEspeciais = (c: CaracteristicaCarga[]) =>
+  c.filter((x) => x !== "comum");
+
+/** "Perigosa · Prioritária" (vazio quando só há carga comum). */
+export const rotuloEspeciais = (c: CaracteristicaCarga[]) =>
+  caracteristicasEspeciais(c).map(rotuloCaracteristica).join(" · ");
 
 /* ---------- Tempo ---------- */
 
@@ -122,6 +131,13 @@ const dataHoraFormatador = new Intl.DateTimeFormat("pt-BR", {
   minute: "2-digit",
   timeZone: "America/Sao_Paulo",
 });
+const dataFormatador = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "America/Sao_Paulo",
+});
+export const formatarData = (iso: string) => dataFormatador.format(new Date(iso));
 export const formatarHora = (iso: string) => horaFormatador.format(new Date(iso));
 export const formatarDataHora = (iso: string) => dataHoraFormatador.format(new Date(iso));
 
@@ -134,15 +150,24 @@ export interface Indice {
   docaPorId: Map<string, Doca>;
   equipPorId: Map<string, Equipamento>;
   /**
-   * Códigos de exibição. O backend só envia UUID para vaga e doca, então
-   * V01/D1 seguem a ORDEM da lista da API (convenção de apresentação).
-   * Equipamento usa o `nome` do backend.
+   * Códigos de exibição. A API atual só envia UUID para vaga e doca; a PROPOSTA
+   * traz `codigo`. Sem ele, V01/D1 seguem a ORDEM da lista (convenção de
+   * apresentação). Equipamento usa o `nome` do backend.
    */
   codigoVaga: Map<string, string>;
   codigoDoca: Map<string, string>;
 }
 
-export function criarIndice(operacoes: Operacao[], recursos: Recursos): Indice {
+type RecursosComCodigo = Recursos | RecursosProposta;
+
+/**
+ * Usa o `codigo` da PROPOSTA de contrato quando o back-end o enviar; sem ele
+ * (API atual) cai na convenção de ordem da lista.
+ */
+const codigoOu = (r: { codigo?: string }, i: number, prefixo: string, largura: number) =>
+  r.codigo ?? `${prefixo}${String(i + 1).padStart(largura, "0")}`;
+
+export function criarIndice(operacoes: Operacao[], recursos: RecursosComCodigo): Indice {
   return {
     operacaoPorId: new Map(operacoes.map((o) => [o.id, o])),
     operacaoPorPlaca: new Map(operacoes.map((o) => [o.caminhao.placa, o])),
@@ -150,9 +175,11 @@ export function criarIndice(operacoes: Operacao[], recursos: Recursos): Indice {
     docaPorId: new Map(recursos.docas.map((d) => [d.id, d])),
     equipPorId: new Map(recursos.equipamentos.map((e) => [e.id, e])),
     codigoVaga: new Map(
-      recursos.vagas.map((v, i) => [v.id, `V${String(i + 1).padStart(2, "0")}`]),
+      recursos.vagas.map((v, i) => [v.id, codigoOu(v as { codigo?: string }, i, "V", 2)]),
     ),
-    codigoDoca: new Map(recursos.docas.map((d, i) => [d.id, `D${i + 1}`])),
+    codigoDoca: new Map(
+      recursos.docas.map((d, i) => [d.id, codigoOu(d as { codigo?: string }, i, "D", 0)]),
+    ),
   };
 }
 
@@ -166,7 +193,7 @@ export interface RecursoResolvido {
 export function resolverRecurso(
   o: Pick<OcorrenciaListada, "recurso_tipo" | "recurso_id">,
   indice: Indice,
-  areas: Recursos,
+  areas: RecursosComCodigo,
 ): RecursoResolvido | null {
   if (!o.recurso_tipo || !o.recurso_id) return null;
   const id = o.recurso_id;
@@ -180,14 +207,16 @@ export function resolverRecurso(
 }
 
 /**
- * O backend não envia título nem numeração. O título é montado a partir de
- * campos reais (tipo + recurso ou placa) e o número segue a ordem da lista.
+ * A API atual não envia título nem numeração. Sem `titulo` (PROPOSTA), o título
+ * é montado a partir de campos reais (tipo + recurso ou placa); o número segue
+ * a ordem da lista.
  */
 export function tituloOcorrencia(
-  o: OcorrenciaListada,
+  o: OcorrenciaListada & { titulo?: string },
   indice: Indice,
-  recursos: Recursos,
+  recursos: RecursosComCodigo,
 ): string {
+  if (o.titulo) return o.titulo; // PROPOSTA: título curto enviado pelo back-end
   const tipo = ROTULO_TIPO_OCORRENCIA[o.tipo];
   const recurso = resolverRecurso(o, indice, recursos);
   const placa = indice.operacaoPorId.get(o.operacao_id)?.caminhao.placa;
@@ -205,6 +234,14 @@ export function recursosDaOperacao(op: Operacao, indice: Indice) {
 }
 
 /* ---------- Auxiliares de tela ---------- */
+
+/** Instante em que a operação entrou na etapa atual (último evento de mudança de estado). */
+export function etapaDesde(op: Operacao): string {
+  const mudancas = op.historico.filter((e) => e.tipo === "MUDANCA_ESTADO");
+  return mudancas.length
+    ? mudancas.reduce((a, b) => (a.ocorrido_em > b.ocorrido_em ? a : b)).ocorrido_em
+    : op.chegada_em;
+}
 
 /** Minutos entre um instante e a referência (relógio real ou instante dos mocks). */
 export function minutosDesde(iso: string, referenciaIso: string): number {

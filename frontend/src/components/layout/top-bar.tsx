@@ -1,7 +1,6 @@
 import { Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { formatarHora } from "@/lib/terminal";
-import { REFERENCIA_SIMULADA, USANDO_DADOS_SIMULADOS } from "@/services/terminal";
+import { REFERENCIA_SIMULADA } from "@/services/terminal";
 
 export function TopBar() {
   return (
@@ -34,21 +33,9 @@ export function TopBar() {
         </label>
       </form>
 
-      <div className="flex items-center gap-3">
-        <span className="hidden text-sm text-t3 lg:inline">
-          {USANDO_DADOS_SIMULADOS
-            ? `Referência ${formatarHora(REFERENCIA_SIMULADA)} · dados simulados`
-            : `Atualizado às ${formatarHora(REFERENCIA_SIMULADA)}`}
-        </span>
-        <Button
-          variant="outline"
-          disabled
-          title="Fora do MVP: depende da integração com o backend"
-          className="border-line-brand text-brand"
-        >
-          + Registrar chegada
-        </Button>
-      </div>
+      <span className="hidden text-sm text-t3 lg:inline">
+        Atualizado às {formatarHora(REFERENCIA_SIMULADA)}
+      </span>
     </header>
   );
 }

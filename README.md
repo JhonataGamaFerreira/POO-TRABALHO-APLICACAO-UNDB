@@ -88,6 +88,7 @@ Camadas dos dados: `types/` (contrato da API) → `mocks/` → `services/` (troc
 
 ```
 frontend/
+├── docs/                    ← contrato-api-proposto.md (campos propostos ao back-end)
 ├── public/                  ← arquivos estáticos
 └── src/
     ├── app/                 ← telas (cada pasta vira uma rota)

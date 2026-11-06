@@ -2,16 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BarChart3,
-  LayoutDashboard,
-  LayoutGrid,
-  ListOrdered,
-  TriangleAlert,
-  Truck,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { LayoutDashboard, LayoutGrid, ListOrdered, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Item {
@@ -24,14 +15,6 @@ const OPERACAO: Item[] = [
   { href: "/dashboard", rotulo: "Painel", icone: LayoutDashboard },
   { href: "/fila", rotulo: "Fila", icone: ListOrdered },
   { href: "/patio", rotulo: "Pátio e docas", icone: LayoutGrid },
-];
-
-/** Telas previstas na arquitetura de informação e fora do MVP de hoje. */
-const FORA_DO_MVP: Item[] = [
-  { href: "#", rotulo: "Equipamentos", icone: Wrench },
-  { href: "#", rotulo: "Caminhões", icone: Truck },
-  { href: "#", rotulo: "Ocorrências", icone: TriangleAlert },
-  { href: "#", rotulo: "Relatórios", icone: BarChart3 },
 ];
 
 export function SidebarNav() {
@@ -82,18 +65,6 @@ export function SidebarNav() {
           </Link>
         );
       })}
-      <p className="mt-3 px-2 pb-1 text-[11px] tracking-wider text-t3 uppercase">Registros</p>
-      {FORA_DO_MVP.map(({ rotulo, icone: Icone }) => (
-        <span
-          key={rotulo}
-          aria-disabled="true"
-          title="Prevista na arquitetura, fora do MVP de hoje"
-          className="flex cursor-not-allowed flex-col items-center gap-1 px-1 py-2.5 text-center text-xs text-t3 opacity-70"
-        >
-          <Icone className="size-5" aria-hidden="true" />
-          {rotulo}
-        </span>
-      ))}
     </nav>
     </>
   );

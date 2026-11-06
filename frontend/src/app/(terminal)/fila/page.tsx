@@ -1,17 +1,15 @@
-import Link from "next/link";
 import { ContextPanel } from "@/components/layout/context-panel";
-import { PageHeader, Secao } from "@/components/layout/page-header";
-import { DetalheCaminhao } from "@/components/terminal/details";
+import { Cartao, CabecalhoCartao, PageHeader } from "@/components/layout/page-header";
+import { Acao } from "@/components/terminal/actions";
+import { PainelCaminhao } from "@/components/terminal/paineis";
 import { EntryRow, TruckRow } from "@/components/terminal/rows";
 import {
   ROTULO_SEVERIDADE,
   etapaLonga,
   formatarDuracao,
-  maiorSeveridade,
   nivelVisual,
+  rotuloEspeciais,
   parametro,
-  recursosDaOperacao,
-  rotuloCaracteristica,
 } from "@/lib/terminal";
 import { carregarTerminal, montarHref } from "@/lib/terminal-contexto";
 
@@ -31,10 +29,9 @@ export default async function FilaPage({
   const termo = q.toUpperCase();
   const fila = termo ? t.fila.filter((i) => i.placa.includes(termo)) : t.fila;
 
-  // Pré-entrada: operações que o backend ainda não coloca na fila.
+  // Pré-entrada: caminhões ainda em documentação ou inspeção.
   const preEntrada = t.operacoes.filter(
     (o) =>
-      !t.filaPorOperacao.has(o.id) &&
       (o.estado === "AGUARDANDO_DOCUMENTACAO" || o.estado === "AGUARDANDO_INSPECAO") &&
       (!termo || o.caminhao.placa.includes(termo)),
   );
@@ -42,60 +39,42 @@ export default async function FilaPage({
   const hrefCaminhao = (placa: string) => montarHref("/fila", { caminhao: placa, q });
   const fecharHref = montarHref("/fila", { q });
 
-  const itemDaOp = op ? (t.filaPorOperacao.get(op.id) ?? null) : null;
-  const linkPatio = op
-    ? op.doca
-      ? montarHref("/patio", { recurso: `doca:${op.doca.id}` })
-      : op.vaga
-        ? montarHref("/patio", { recurso: `vaga:${op.vaga.id}` })
-        : null
-    : null;
-
   return (
     <div className="flex">
-      <main className="flex min-w-0 flex-1 flex-col gap-5 p-6">
-        <PageHeader
-          titulo="Fila de atendimento"
-          descricao="Ordem e pontuação calculadas pelo backend. Esta tela só exibe; não reordena nem prioriza."
-        />
+      <main className="flex min-w-0 flex-1 flex-col gap-6 p-6">
+        <PageHeader titulo="Fila de atendimento" />
 
         {q && (
-          <p className="flex items-center gap-3 text-sm text-t2">
+          <p className="flex flex-wrap items-center gap-3 text-sm text-t2">
             Filtrando por placa: <span className="font-mono font-medium text-t1">{q}</span>
-            <Link href="/fila" className="font-medium text-brand hover:underline">
+            <Acao href="/fila" variante="link">
               Limpar busca
-            </Link>
+            </Acao>
           </p>
         )}
 
-        <Secao
-          titulo="Na fila"
-          contagem={`${fila.length}${termo ? ` de ${t.fila.length}` : ""}`}
-        >
+        <Cartao>
+          <CabecalhoCartao titulo="Na fila" contagem={`${fila.length}${termo ? ` de ${t.fila.length}` : ""}`} />
           {fila.length ? (
-            <div className="mt-1">
-              {fila.map((i) => {
-                const o = t.idx.operacaoPorId.get(i.operacao_id);
-                const sev = o ? maiorSeveridade(o.ocorrencias) : null;
-                const especiais = i.carga.caracteristicas.filter((c) => c !== "comum");
-                return (
-                  <TruckRow
-                    key={i.operacao_id}
-                    href={hrefCaminhao(i.placa)}
-                    selecionado={i.placa === placaSelecionada}
-                    posicao={i.posicao}
-                    placa={i.placa}
-                    carga={i.carga.descricao}
-                    situacao={etapaLonga(i.estado)}
-                    espera={formatarDuracao(i.espera_minutos)}
-                    nivel={sev ? nivelVisual(sev) : "none"}
-                    rotuloSeveridade={sev ? ROTULO_SEVERIDADE[sev] : undefined}
-                    etiqueta={especiais.map(rotuloCaracteristica).join(" · ") || undefined}
-                    complemento={`${i.pontuacao} pts`}
-                  />
-                );
-              })}
-            </div>
+            fila.map((i) => {
+              const o = t.idx.operacaoPorId.get(i.operacao_id);
+              const sev = t.ctx.sevPorOperacao.get(i.operacao_id);
+              return (
+                <TruckRow
+                  key={i.operacao_id}
+                  href={hrefCaminhao(i.placa)}
+                  selecionado={i.placa === placaSelecionada}
+                  posicao={i.posicao}
+                  placa={i.placa}
+                  linha2={i.carga.descricao}
+                  linha3={etapaLonga(i.estado)}
+                  espera={formatarDuracao(i.espera_minutos)}
+                  nivel={sev ? nivelVisual(sev) : "none"}
+                  rotuloSeveridade={sev ? ROTULO_SEVERIDADE[sev] : undefined}
+                  marca={o ? rotuloEspeciais(o.carga.caracteristicas) || undefined : undefined}
+                />
+              );
+            })
           ) : (
             <p className="px-5 py-8 text-sm text-t2">
               {termo
@@ -103,14 +82,11 @@ export default async function FilaPage({
                 : "Nenhum caminhão na fila no momento."}
             </p>
           )}
-        </Secao>
+        </Cartao>
 
-        <Secao
-          titulo="Pré-entrada"
-          contagem={String(preEntrada.length)}
-          nota="Ainda em documentação ou inspeção; não entram na fila do backend."
-        >
-          <div className="px-5 py-3">
+        <Cartao>
+          <CabecalhoCartao titulo="Pré-entrada" contagem={String(preEntrada.length)} />
+          <div className="flex flex-col px-4 py-3">
             {preEntrada.length ? (
               preEntrada.map((o) => (
                 <EntryRow
@@ -118,28 +94,19 @@ export default async function FilaPage({
                   href={hrefCaminhao(o.caminhao.placa)}
                   placa={o.caminhao.placa}
                   detalhe={etapaLonga(o.estado)}
-                  atencao={o.ocorrencias.some((x) => x.estado === "ABERTA")}
+                  atencao={t.ocorrenciasDaOperacao(o.id).some((x) => x.estado === "ABERTA")}
                 />
               ))
             ) : (
               <p className="text-sm text-t2">Nenhum caminhão em pré-entrada.</p>
             )}
           </div>
-        </Secao>
+        </Cartao>
       </main>
 
       {op && (
         <ContextPanel rotulo="Detalhe do caminhão" fecharHref={fecharHref}>
-          <DetalheCaminhao
-            op={op}
-            item={itemDaOp}
-            recursos={recursosDaOperacao(op, t.idx)}
-            ocorrencias={t.ligacoes(
-              t.ocorrencias.filter((o) => o.operacao_id === op.id),
-              (o) => montarHref("/dashboard", { ocorrencia: o.id }),
-            )}
-            linkPatio={linkPatio}
-          />
+          <PainelCaminhao t={t} op={op} />
         </ContextPanel>
       )}
     </div>

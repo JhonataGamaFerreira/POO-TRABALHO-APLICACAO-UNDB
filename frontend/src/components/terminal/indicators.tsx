@@ -70,7 +70,31 @@ export function SeverityIndicator({
   );
 }
 
-export type VisualRecurso = "free" | "occupied" | "maintenance" | "blocked";
+/**
+ * Visuais de recurso do DS. `interrupted` e `blocked` usam tokens PENDENTES
+ * (dependem de definição do back-end sobre os estados Interrompida e
+ * Bloqueado/Quebrado); são representação visual, não estado da API.
+ */
+export type VisualRecurso = "free" | "occupied" | "interrupted" | "maintenance" | "blocked";
+
+/** Estilo de superfície de cada visual (borda + fundo). Compartilhado por swatch e células. */
+export const estiloVisual: Record<VisualRecurso, string> = {
+  free: "border-[1.5px] border-line-brand bg-surface",
+  occupied: "border border-line-resource bg-occupied",
+  interrupted: "border-[1.5px] border-dashed border-attention bg-sev-attention-bg",
+  maintenance: "hatch-maintenance border border-line-pattern",
+  blocked: "hatch-blocked border border-blocked-line/60",
+};
+
+/** Pausa (operação interrompida). Sempre acompanhada do texto "Interrompida". */
+export function PauseGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 10 10" className={cn("size-2.5 shrink-0", className)} aria-hidden="true">
+      <rect x="1.5" y="1" width="2.5" height="8" fill="var(--severity-attention-solid)" />
+      <rect x="6" y="1" width="2.5" height="8" fill="var(--severity-attention-solid)" />
+    </svg>
+  );
+}
 
 /** Resource Swatch (DS 09.10): amostra de 20 px do estado do recurso. */
 export function ResourceSwatch({
@@ -85,10 +109,7 @@ export function ResourceSwatch({
       aria-hidden="true"
       className={cn(
         "inline-block size-5 shrink-0 rounded-ds-sm",
-        visual === "free" && "border-[1.5px] border-line-brand bg-surface",
-        visual === "occupied" && "border border-line-resource bg-occupied",
-        visual === "maintenance" && "hatch-maintenance border border-line-pattern",
-        visual === "blocked" && "hatch-blocked border border-blocked-line/60",
+        estiloVisual[visual],
         className,
       )}
     />
