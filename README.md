@@ -65,6 +65,23 @@ O front consome a API do back-end. Enquanto ela não está pronta, os dados são
 | 8 | Ocorrências | `/ocorrencias` | `app/ocorrencias` |
 | 9 | Relatórios | `/relatorios` | `app/relatorios` |
 
+### Estado atual do MVP
+
+Implementadas até agora, com **dados simulados** (ainda sem integração com o back-end):
+
+| Tela | Rota | Observação |
+|---|---|---|
+| Painel | `/dashboard` | Ocorrências abertas, fluxo por etapa, docas e próximos da fila. `/` redireciona para cá |
+| Fila de atendimento | `/fila` | Ordem e pontuação vêm do back-end (simuladas); busca por placa |
+| Pátio e docas | `/patio` | Vagas, docas e equipamentos com filtro por estado. Inclui as docas, então `/docas` não é uma tela separada neste MVP |
+
+- Selecionar um item abre o painel contextual (a seleção fica na URL, por exemplo `?caminhao=FGH-2J34`); `Esc` fecha.
+- As telas ficam em `src/app/(terminal)/`, que aplica o layout comum (barra superior e menu lateral).
+- Nenhuma ação executa operação real: ações previstas pelo back-end aparecem só como informação.
+- As demais telas da tabela acima ainda não foram implementadas.
+
+Camadas dos dados: `types/` (contrato da API) → `mocks/` → `services/` (trocável por chamadas à API) → `lib/` (rótulos e formatação, sem regra de negócio) → componentes.
+
 ---
 
 ## 📁 Estrutura de pastas
