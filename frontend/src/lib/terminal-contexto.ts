@@ -7,7 +7,7 @@
  * com fallback para a API atual: sem eles a tela continua funcionando, só com
  * menos informação.
  */
-import { getTerminal, REFERENCIA_SIMULADA } from "@/services/terminal";
+import type { Terminal } from "@/store/selecionar";
 import type { LigacaoOcorrencia } from "@/components/terminal/details";
 import type { ContextoRecursos } from "@/components/terminal/recurso-views";
 import {
@@ -32,12 +32,16 @@ const ORDEM_SEVERIDADE: SeveridadeOcorrencia[] = ["baixa", "media", "alta", "cri
 const maior = (a: SeveridadeOcorrencia, b: SeveridadeOcorrencia) =>
   ORDEM_SEVERIDADE.indexOf(a) >= ORDEM_SEVERIDADE.indexOf(b) ? a : b;
 
-/** "A", "A e B", "A, B e C". */
-export const juntar = (itens: string[]) =>
-  itens.length < 2 ? itens.join("") : `${itens.slice(0, -1).join(", ")} e ${itens.at(-1)}`;
+import { juntar } from "@/domain/derivados";
 
-export async function carregarTerminal() {
-  const t = await getTerminal();
+export { juntar };
+
+/**
+ * Monta o que as telas compartilham a partir do terminal já montado pelo
+ * seletor (`src/store/selecionar.ts`) e do instante atual.
+ */
+export function montarContexto(t: Terminal, agoraData: Date) {
+  const agora = agoraData.toISOString();
   const idx = criarIndice(t.operacoes, t.recursos);
   const abertas = t.ocorrencias.filter((o) => o.estado === "ABERTA");
   const filaPorOperacao = new Map(t.fila.map((i) => [i.operacao_id, i]));
@@ -78,12 +82,12 @@ export async function carregarTerminal() {
     abertas,
     sevPorOperacao,
     afetadasDe,
-    agora: REFERENCIA_SIMULADA,
+    agora,
   };
   const numeroOcorrencia = (o: OcorrenciaProposta) =>
     abertas.findIndex((x) => x.id === o.id) + 1;
   const idadeOcorrencia = (o: OcorrenciaProposta) =>
-    formatarDuracao(minutosDesde(o.criada_em, REFERENCIA_SIMULADA));
+    formatarDuracao(minutosDesde(o.criada_em, agora));
   const titulo = (o: OcorrenciaProposta) => tituloOcorrencia(o, idx, t.recursos);
 
   /** Métrica da linha: a definida pelo back-end (PROPOSTA) ou, sem ela, "aberta há". */
@@ -156,7 +160,7 @@ export async function carregarTerminal() {
   };
 }
 
-export type TerminalCarregado = Awaited<ReturnType<typeof carregarTerminal>>;
+export type TerminalCarregado = ReturnType<typeof montarContexto>;
 
 /** Monta `base?a=1&b=2` ignorando parâmetros vazios. */
 export function montarHref(

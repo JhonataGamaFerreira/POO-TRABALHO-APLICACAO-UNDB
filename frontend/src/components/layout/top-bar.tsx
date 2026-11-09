@@ -1,6 +1,32 @@
+"use client";
+
 import { Search } from "lucide-react";
-import { formatarHora } from "@/lib/terminal";
-import { REFERENCIA_SIMULADA } from "@/services/terminal";
+import { useAgora } from "@/store/use-terminal";
+import { MenuCenario } from "./menu-cenario";
+
+const diaFormatador = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "short",
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+const horaFormatador = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+/** "seg., 09/11 · 14:35" a partir do relógio do navegador. */
+function DataHora() {
+  const agora = useAgora();
+  if (!agora) return <span aria-hidden="true">&nbsp;</span>;
+  const d = new Date(agora);
+  return (
+    <time dateTime={d.toISOString()}>
+      {diaFormatador.format(d).replace(".,", ",")} · {horaFormatador.format(d)}
+    </time>
+  );
+}
 
 export function TopBar() {
   return (
@@ -34,8 +60,9 @@ export function TopBar() {
       </form>
 
       <span className="hidden text-sm text-t3 lg:inline">
-        Atualizado às {formatarHora(REFERENCIA_SIMULADA)}
+        <DataHora />
       </span>
+      <MenuCenario />
     </header>
   );
 }

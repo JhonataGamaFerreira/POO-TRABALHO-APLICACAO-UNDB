@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * Botões e links de ação do DS (Button 09.9: Style × Size × State).
  * Estados cobertos: default, hover, focus-visible (anel global de 2 px), active
- * (pressionado) e selected (chips). Toda ação é um link de navegação.
+ * (pressionado) e selected (chips). `Acao` navega (link); `BotaoAcao` executa.
  */
 export type VarianteAcao = "primary" | "outline" | "ghost" | "link";
 
@@ -35,6 +35,13 @@ interface Props {
   scroll?: boolean;
 }
 
+/** Classes do botão de ação do DS, para elementos que não são links (botões, itens de diálogo). */
+export const estiloAcao = (
+  variante: VarianteAcao = "outline",
+  tamanho: keyof typeof tamanhos = "md",
+  className?: string,
+) => cn(base, variantes[variante], variante !== "link" && tamanhos[tamanho], className);
+
 export function Acao({
   variante = "outline",
   tamanho = "md",
@@ -43,12 +50,7 @@ export function Acao({
   href,
   scroll = false,
 }: Props) {
-  const classes = cn(
-    base,
-    variantes[variante],
-    variante !== "link" && tamanhos[tamanho],
-    className,
-  );
+  const classes = estiloAcao(variante, tamanho, className);
   return (
     <Link href={href} scroll={scroll} className={classes}>
       {children}
@@ -90,5 +92,26 @@ export function ChipLink({
         </span>
       )}
     </Link>
+  );
+}
+
+/** Botão que executa uma ação (mesmo visual de `Acao`). */
+export function BotaoAcao({
+  variante = "outline",
+  tamanho = "md",
+  className,
+  type = "button",
+  ...props
+}: Omit<React.ComponentProps<"button">, "className"> & {
+  variante?: VarianteAcao;
+  tamanho?: keyof typeof tamanhos;
+  className?: string;
+}) {
+  return (
+    <button
+      type={type}
+      className={cn(estiloAcao(variante, tamanho, className), "disabled:pointer-events-none disabled:opacity-50")}
+      {...props}
+    />
   );
 }

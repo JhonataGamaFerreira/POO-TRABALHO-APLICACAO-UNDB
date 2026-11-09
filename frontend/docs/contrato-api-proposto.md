@@ -2,7 +2,7 @@
 
 > **Status: PROPOSTA para discussão com o responsável pelo back-end (Jhonata).**
 > Nada aqui é regra de negócio confirmada nem contrato firmado. O front-end hoje
-> usa dados simulados (`src/mocks/terminal.ts`); a API real **não** foi integrada
+> usa um cenário de demonstração em `src/mocks/cenario.ts`, processado pelo motor de `src/domain/`; a API real **não** foi integrada
 > e o back-end **não** foi alterado.
 
 Referência do contrato atual: back-end, commit `b16a874` (`api.py` / `main.py`).
