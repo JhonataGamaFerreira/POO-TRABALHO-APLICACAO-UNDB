@@ -10,8 +10,11 @@ import { EntryRow, TruckRow } from "@/components/terminal/rows";
 import {
   ROTULO_SEVERIDADE,
   etapaLonga,
+  etapaDesde,
   formatarDuracao,
+  minutosDesde,
   nivelVisual,
+  recursosDaOperacao,
   rotuloEspeciais,
   parametro,
 } from "@/lib/terminal";
@@ -33,6 +36,13 @@ export function FilaView() {
   const preEntrada = t.operacoes.filter(
     (o) =>
       (o.estado === "AGUARDANDO_DOCUMENTACAO" || o.estado === "AGUARDANDO_INSPECAO") &&
+      (!termo || o.caminhao.placa.includes(termo)),
+  );
+
+  // Execução: caminhões que já saíram da fila e ainda não foram liberados.
+  const emExecucao = t.operacoes.filter(
+    (o) =>
+      (o.estado === "EM_OPERACAO" || o.estado === "AGUARDANDO_LIBERACAO") &&
       (!termo || o.caminhao.placa.includes(termo)),
   );
 
@@ -99,6 +109,30 @@ export function FilaView() {
               ))
             ) : (
               <p className="text-sm text-t2">Nenhum caminhão em pré-entrada.</p>
+            )}
+          </div>
+        </Cartao>
+
+        <Cartao>
+          <CabecalhoCartao titulo="Em operação e liberação" contagem={String(emExecucao.length)} />
+          <div className="flex flex-col px-4 py-3">
+            {emExecucao.length ? (
+              emExecucao.map((o) => {
+                const rec = recursosDaOperacao(o, t.idx);
+                const local = [rec.doca, rec.equipamento].filter(Boolean).join(" · ");
+                return (
+                  <EntryRow
+                    key={o.id}
+                    href={hrefCaminhao(o.caminhao.placa)}
+                    placa={o.caminhao.placa}
+                    detalhe={`${etapaLonga(o.estado)}${local ? ` · ${local}` : ""}`}
+                    tempo={formatarDuracao(minutosDesde(etapaDesde(o), t.ctx.agora))}
+                    atencao={t.ocorrenciasDaOperacao(o.id).some((x) => x.estado === "ABERTA")}
+                  />
+                );
+              })
+            ) : (
+              <p className="text-sm text-t2">Nenhum caminhão em operação ou aguardando liberação.</p>
             )}
           </div>
         </Cartao>

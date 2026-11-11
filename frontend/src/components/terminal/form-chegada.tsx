@@ -119,7 +119,7 @@ export function FormChegada() {
   const alternarCaracteristica = (c: CaracteristicaCarga) =>
     setD((a) => {
       const tem = a.caracteristicas.includes(c);
-      // "comum" exclui as demais (HIPÓTESE de apresentação: evita carga "comum e perigosa").
+      // "comum" exclui as demais: regra do back-end (`Carga.__post_init__`); o formulário a aplica na escolha.
       const proximas = tem
         ? a.caracteristicas.filter((x) => x !== c)
         : c === "comum"

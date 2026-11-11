@@ -21,7 +21,10 @@ export const TRANSICOES: Record<EstadoCaminhao, readonly EstadoCaminhao[]> = {
   AGUARDANDO_DOCUMENTACAO: ["AGUARDANDO_INSPECAO", "AGUARDANDO_ENTRADA", "AGUARDANDO_LIBERACAO"],
   AGUARDANDO_INSPECAO: ["AGUARDANDO_DOCUMENTACAO", "AGUARDANDO_ENTRADA", "AGUARDANDO_LIBERACAO"],
   AGUARDANDO_ENTRADA: ["NO_PATIO", "AGUARDANDO_DOCUMENTACAO", "AGUARDANDO_LIBERACAO"],
-  NO_PATIO: ["AGUARDANDO_RECURSO", "AGUARDANDO_LIBERACAO"],
+  // MVP do front: NO_PATIO → EM_OPERACAO é permitido para iniciar direto quando há recursos.
+  // O backend (b16a874) não lista esta transição e falha depois de reservar os recursos
+  // (docs/divergencias-backend-mvp.md, item 1).
+  NO_PATIO: ["AGUARDANDO_RECURSO", "EM_OPERACAO", "AGUARDANDO_LIBERACAO"],
   AGUARDANDO_RECURSO: ["EM_OPERACAO", "AGUARDANDO_LIBERACAO"],
   EM_OPERACAO: ["AGUARDANDO_RECURSO", "AGUARDANDO_LIBERACAO"],
   AGUARDANDO_LIBERACAO: ["FINALIZADO"],
@@ -169,6 +172,27 @@ export const docaAdequada = (e: EstadoTerminal, d: DocaE, o: OperacaoE) =>
 export function equipamentoCompativel(eq: EquipamentoE, o: OperacaoE): boolean {
   if (eq.estado !== "DISPONIVEL" || !eq.tipos_compativeis.includes(o.tipo)) return false;
   return !exige(o, "frágil") || eq.aceita_carga_fragil;
+}
+
+/**
+ * Conjunto que `alocar_e_iniciar` reservaria agora: a vaga atual (se ainda válida) ou a primeira
+ * vaga livre adequada, a primeira doca adequada e o primeiro equipamento compatível. Cada item é
+ * `undefined` quando não há candidato. Única definição: o início da operação e a prévia de
+ * alocação da interface usam esta função.
+ */
+export function selecionarRecursos(e: EstadoTerminal, o: OperacaoE): {
+  vaga: VagaE | undefined;
+  doca: DocaE | undefined;
+  equipamento: EquipamentoE | undefined;
+} {
+  const atual = o.vaga_id ? e.vagas.find((v) => v.id === o.vaga_id) : undefined;
+  const atualValida =
+    !!atual && atual.estado === "OCUPADO" && atual.operacao_id === o.id && areaAdequada(areaDe(e, atual), o);
+  return {
+    vaga: atualValida ? atual : e.vagas.find((v) => vagaAdequada(e, v, o)),
+    doca: e.docas.find((d) => docaAdequada(e, d, o)),
+    equipamento: e.equipamentos.find((q) => equipamentoCompativel(q, o)),
+  };
 }
 
 /** Habilitação exigida de quem inicia a operação (`alocar_e_iniciar`). */

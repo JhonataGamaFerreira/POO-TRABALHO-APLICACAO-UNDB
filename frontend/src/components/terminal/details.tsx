@@ -301,6 +301,7 @@ export function DetalheOcorrencia({
   consulta,
   linkPatio,
   voltarPainel,
+  acoes,
 }: {
   numero: number;
   titulo: string;
@@ -316,6 +317,8 @@ export function DetalheOcorrencia({
   linkPatio?: string;
   /** Pátio aberto a partir do Painel: volta com a ocorrência. */
   voltarPainel?: string;
+  /** Ação sobre a ocorrência ("Resolver ocorrência"). */
+  acoes?: React.ReactNode;
 }) {
   return (
     <>
@@ -362,6 +365,7 @@ export function DetalheOcorrencia({
       )}
 
       <Rodape>
+        {acoes}
         {linkPatio && (
           <Acao href={linkPatio} variante="primary" tamanho="lg" scroll>
             Ver no Pátio e docas
@@ -518,6 +522,7 @@ export function DetalheRecurso({
   ocorrencias,
   acaoPrimaria,
   voltar,
+  acoes,
 }: {
   tipoRotulo: "Vaga" | "Doca" | "Equipamento";
   codigo: string;
@@ -543,6 +548,8 @@ export function DetalheRecurso({
   ocorrencias: LigacaoOcorrencia[];
   acaoPrimaria?: { rotulo: string; href: string } | null;
   voltar?: { rotulo: string; href: string } | null;
+  /** Ações de disponibilidade (manutenção, interdição da área). */
+  acoes?: React.ReactNode;
 }) {
   return (
     <>
@@ -625,6 +632,8 @@ export function DetalheRecurso({
           <ListaOcorrencias itens={ocorrencias} />
         </SecaoPainel>
       )}
+
+      {acoes && <SecaoPainel titulo="Disponibilidade">{acoes}</SecaoPainel>}
 
       {(acaoPrimaria || voltar) && (
         <Rodape>

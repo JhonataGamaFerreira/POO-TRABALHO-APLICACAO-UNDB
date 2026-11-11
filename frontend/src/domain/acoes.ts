@@ -6,6 +6,11 @@
  * novo estado. Se uma regra for violada, lança `ErroDeDominio` (o backend
  * responderia 409/403/422) e o estado original permanece intacto.
  *
+ * Onde o MVP do front DIFERE do backend de propósito (ver docs/divergencias-backend-mvp.md):
+ *  - iniciar: vai direto de NO_PATIO a EM_OPERACAO e só reserva depois de validar o conjunto;
+ *  - cancelar: só onde `acoes_permitidas` oferece `cancel` (não em EM_OPERACAO);
+ *  - retomar: é um novo `start` (passa de novo pela alocação), com evento "Operação retomada.".
+ *
  * O que NÃO é do backend e fica marcado como PROPOSTA/HIPÓTESE:
  *  - `responsavelPara`: quem executa cada ação (o front não tem login). O
  *    backend só EXIGE função em: iniciar (operador habilitado), resolver
@@ -16,16 +21,14 @@
  */
 import type { EstadoCaminhao, TipoOcorrencia, TipoEvento } from "@/types/terminal";
 import {
-  areaAdequada,
-  areaDe,
-  docaAdequada,
+  ACOES_PERMITIDAS,
   ehSupervisao,
-  equipamentoCompativel,
   estadoInicial,
   exige,
   habilitacaoPara,
   habilitado,
   minutosEntre,
+  selecionarRecursos,
   transicaoPermitida,
   vagaAdequada,
 } from "./regras";
@@ -80,7 +83,7 @@ const PAPEL: Record<Acao["tipo"], FuncaoFuncionario> = {
 export function responsavelDaAcao(
   e: EstadoTerminal,
   tipo: Acao["tipo"],
-  op?: OperacaoE,
+  op?: Pick<OperacaoE, "tipo">,
 ): Funcionario {
   const papel = PAPEL[tipo];
   const candidatos = e.funcionarios.filter((f) =>
@@ -97,7 +100,7 @@ export function responsavelDaAcao(
   return escolhido;
 }
 
-export const responsavelPara = (e: EstadoTerminal, acao: Acao, op?: OperacaoE): Funcionario =>
+export const responsavelPara = (e: EstadoTerminal, acao: Acao, op?: Pick<OperacaoE, "tipo">): Funcionario =>
   responsavelDaAcao(e, acao.tipo, op);
 
 /* ---------- Histórico, estado e ocorrência (Operacao) ---------- */
@@ -309,7 +312,14 @@ function autorizarEntrada(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, vagaI
   return { mensagem: `${placaDe(op)} autorizado a entrar na vaga ${vaga.codigo}.` };
 }
 
-/** `AlocadorDeRecursos.alocar_e_iniciar`. Sem conjunto completo não é erro: a operação passa a aguardar. */
+/**
+ * `AlocadorDeRecursos.alocar_e_iniciar`, com a correção do MVP: a operação só muda de estado e só
+ * reserva recursos depois de confirmar o conjunto completo (vaga, doca e equipamento). Sem conjunto
+ * completo não é erro e nada é reservado: NO_PATIO passa a AGUARDANDO_RECURSO e AGUARDANDO_RECURSO
+ * continua como está. Com o conjunto, vai direto a EM_OPERACAO (NO_PATIO → EM_OPERACAO existe em
+ * `TRANSICOES` do front; no backend ela falta e o início com recursos falha depois de reservá-los).
+ * Retomar uma operação interrompida é o mesmo caminho: passa de novo pela alocação.
+ */
 function iniciarOperacao(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, resp: Funcionario): ResultadoAcao {
   if (op.estado !== "NO_PATIO" && op.estado !== "AGUARDANDO_RECURSO") {
     throw new ErroDeDominio("Caminhão precisa estar no pátio ou aguardando recurso.");
@@ -319,16 +329,7 @@ function iniciarOperacao(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, resp: 
     throw new ErroDeDominio(`Funcionário não está habilitado para ${habilitacaoPara(op.tipo)}.`);
   }
 
-  const vagaAtual = op.vaga_id ? e.vagas.find((v) => v.id === op.vaga_id) : undefined;
-  const vagaAtualValida =
-    !!vagaAtual &&
-    vagaAtual.estado === "OCUPADO" &&
-    vagaAtual.operacao_id === op.id &&
-    areaAdequada(areaDe(e, vagaAtual), op);
-  const vaga = vagaAtualValida ? vagaAtual : e.vagas.find((v) => vagaAdequada(e, v, op));
-  const doca = e.docas.find((d) => docaAdequada(e, d, op));
-  const equipamento = e.equipamentos.find((q) => equipamentoCompativel(q, op));
-
+  const { vaga, doca, equipamento } = selecionarRecursos(e, op);
   if (!vaga || !doca || !equipamento) {
     if (op.estado === "NO_PATIO") mudarEstado(ctx, op, "AGUARDANDO_RECURSO", resp);
     return {
@@ -337,18 +338,9 @@ function iniciarOperacao(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, resp: 
     };
   }
 
-  /*
-   * DIVERGÊNCIA DO BACK-END (sinalizada, não resolvida pelo front): em `main.py`,
-   * `alocar_e_iniciar` chama `_mudar_estado(EM_OPERACAO)` direto de NO_PATIO, mas
-   * TRANSICOES[NO_PATIO] só permite AGUARDANDO_RECURSO e AGUARDANDO_LIBERACAO. Com
-   * recursos livres, o backend atual levantaria "Transição inválida". O README
-   * descreve a sequência NO_PÁTIO → AGUARDANDO_RECURSO → EM_OPERAÇÃO; por isso o
-   * motor passa pelas duas transições, ambas existentes na tabela, sem criar
-   * nenhuma nova. Pendente de confirmação com o responsável pelo backend.
-   */
-  if (op.estado === "NO_PATIO") mudarEstado(ctx, op, "AGUARDANDO_RECURSO", resp);
+  const retomando = op.interrupcao !== null;
 
-  // Commit das reservas só depois de validar o conjunto completo.
+  // Reservas só depois de validar o conjunto completo.
   if (op.vaga_id && op.vaga_id !== vaga.id) {
     const antiga = e.vagas.find((v) => v.id === op.vaga_id);
     if (antiga) {
@@ -369,9 +361,12 @@ function iniciarOperacao(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, resp: 
   mudarEstado(ctx, op, "EM_OPERACAO", resp);
   op.iniciada_em = op.iniciada_em ?? ctx.agora.toISOString();
   op.interrupcao = null;
-  registrarEvento(ctx, op, "OPERACAO_INICIADA", resp, "Operação iniciada.");
+  registrarEvento(ctx, op, "OPERACAO_INICIADA", resp, retomando ? "Operação retomada." : "Operação iniciada.");
+  const alocados = `${vaga.codigo}, ${doca.codigo}, ${equipamento.nome}`;
   return {
-    mensagem: `Operação de ${placaDe(op)} iniciada (${vaga.codigo}, ${doca.codigo}, ${equipamento.nome}).`,
+    mensagem: retomando
+      ? `Operação de ${placaDe(op)} retomada (${alocados}).`
+      : `Operação de ${placaDe(op)} iniciada (${alocados}).`,
     iniciada: true,
   };
 }
@@ -399,11 +394,13 @@ function interromper(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, a: Extract
 
   const tipo: TipoOcorrencia = a.equipamentoQuebrado ? "EQUIPAMENTO_QUEBRADO" : "ATRASO";
   const equipamento = op.equipamento_id ? e.equipamentos.find((q) => q.id === op.equipamento_id) : undefined;
+  // O equipamento quebrado é o recurso da ocorrência (é ele que as telas ligam à causa da espera).
+  const recurso = a.equipamentoQuebrado && equipamento ? { tipo: "equipment" as const, id: equipamento.id } : a.recurso;
   const oc = registrarOcorrencia(e, ctx, op, tipo, a.descricao.trim(), resp, {
     severidade: a.severidade,
     impacto: a.impacto,
-    recurso_tipo: a.recurso?.tipo ?? null,
-    recurso_id: a.recurso?.id ?? null,
+    recurso_tipo: recurso?.tipo ?? null,
+    recurso_id: recurso?.id ?? null,
     titulo: a.equipamentoQuebrado && equipamento
       ? `${equipamento.nome} quebrado`
       : `${placaDe(op)} · operação interrompida`,
@@ -424,13 +421,17 @@ function interromper(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, a: Extract
   return { mensagem: `Operação de ${placaDe(op)} interrompida. Ocorrência aberta.` };
 }
 
-/** `Operacao.cancelar`. */
+/**
+ * `Operacao.cancelar`, com a regra do MVP: só nos estados em que `acoes_permitidas` oferece `cancel`
+ * (da triagem até aguardar recurso). Em EM_OPERACAO é preciso interromper antes. O método do backend
+ * aceita cancelar em EM_OPERACAO, mas a API não o oferece (docs/divergencias-backend-mvp.md, item 2).
+ */
 function cancelar(e: EstadoTerminal, ctx: Contexto, op: OperacaoE, motivo: string, resp: Funcionario): ResultadoAcao {
   if (!motivo.trim()) throw new ErroDeDominio("Cancelamento exige motivo.");
-  if (op.estado === "FINALIZADO" || op.estado === "AGUARDANDO_LIBERACAO") {
-    throw new ErroDeDominio("Operação não pode ser cancelada neste estado.");
+  if (op.estado === "EM_OPERACAO") {
+    throw new ErroDeDominio("Operação em andamento: interrompa antes de cancelar.");
   }
-  if (!transicaoPermitida(op.estado, "AGUARDANDO_LIBERACAO")) {
+  if (!ACOES_PERMITIDAS[op.estado].includes("cancel") || !transicaoPermitida(op.estado, "AGUARDANDO_LIBERACAO")) {
     throw new ErroDeDominio("Operação não pode ser cancelada neste estado.");
   }
   op.cancelada = true;

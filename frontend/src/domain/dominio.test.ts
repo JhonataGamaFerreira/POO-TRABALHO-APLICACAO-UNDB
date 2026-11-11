@@ -116,6 +116,8 @@ describe("máquina de estados (TRANSICOES)", () => {
   it("espelha as transições do back-end", () => {
     assert.deepEqual(TRANSICOES.AGUARDANDO_DOCUMENTACAO, ["AGUARDANDO_INSPECAO", "AGUARDANDO_ENTRADA", "AGUARDANDO_LIBERACAO"]);
     assert.deepEqual(TRANSICOES.EM_OPERACAO, ["AGUARDANDO_RECURSO", "AGUARDANDO_LIBERACAO"]);
+    // MVP do front: início direto com recursos (o backend não tem esta transição).
+    assert.deepEqual(TRANSICOES.NO_PATIO, ["AGUARDANDO_RECURSO", "EM_OPERACAO", "AGUARDANDO_LIBERACAO"]);
     assert.deepEqual(TRANSICOES.AGUARDANDO_LIBERACAO, ["FINALIZADO"]);
     assert.deepEqual(TRANSICOES.FINALIZADO, []);
   });
@@ -290,9 +292,9 @@ describe("iniciar operação (AlocadorDeRecursos.alocar_e_iniciar)", () => {
     assert.ok(n.doca_id && n.equipamento_id && n.vaga_id);
     assert.equal(n.iniciada_em, AGORA.toISOString());
     assert.equal(n.funcionario_responsavel_id, FUNC.operador.id);
-    // NO_PATIO → AGUARDANDO_RECURSO → EM_OPERACAO (divergência do backend; ver comentário em acoes.ts)
-    assert.deepEqual(n.historico.map((h) => h.estado_novo), ["AGUARDANDO_RECURSO", null, "EM_OPERACAO", null]);
-    assert.deepEqual(n.historico.map((h) => h.tipo), ["MUDANCA_ESTADO", "ALOCACAO_RECURSO", "MUDANCA_ESTADO", "OPERACAO_INICIADA"]);
+    // NO_PATIO → EM_OPERACAO direto, sem passo intermediário (divergência do backend; ver docs/divergencias-backend-mvp.md)
+    assert.deepEqual(n.historico.map((h) => h.estado_novo), [null, "EM_OPERACAO", null]);
+    assert.deepEqual(n.historico.map((h) => h.tipo), ["ALOCACAO_RECURSO", "MUDANCA_ESTADO", "OPERACAO_INICIADA"]);
     assert.equal(r.estado.docas.find((d) => d.id === n.doca_id)!.estado, "OCUPADO");
     assert.equal(r.estado.equipamentos.find((q) => q.id === n.equipamento_id)!.estado, "OCUPADO");
     semViolacoes(r.estado);
@@ -521,7 +523,8 @@ describe("fluxo completo e consistência", () => {
     }
     const final = e.operacoes[0];
     assert.equal(final.estado, "FINALIZADO");
-    assert.equal(final.historico.filter((h) => h.tipo === "MUDANCA_ESTADO").length, 6);
+    // documentação → entrada → no pátio → em operação → aguardando liberação → finalizado
+    assert.equal(final.historico.filter((h) => h.tipo === "MUDANCA_ESTADO").length, 5);
     assert.equal(e.vagas.every((v) => v.estado === "LIVRE"), true);
     assert.equal(e.docas.every((d) => d.estado === "LIVRE"), true);
   });

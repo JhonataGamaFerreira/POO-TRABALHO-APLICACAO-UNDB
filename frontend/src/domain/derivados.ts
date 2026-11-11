@@ -27,8 +27,9 @@ import {
   minutosEntre,
   motivoVagaIndisponivel,
   ordenarFila,
+  selecionarRecursos,
 } from "./regras";
-import type { DocaE, EstadoTerminal, OcorrenciaE, OperacaoE } from "./tipos";
+import type { DocaE, EquipamentoE, EstadoTerminal, OcorrenciaE, OperacaoE, VagaE } from "./tipos";
 import { normalizarPlaca } from "./validacao";
 
 /** "A", "A e B", "A, B e C". */
@@ -182,7 +183,11 @@ export function motivoEspera(e: EstadoTerminal, op: OperacaoE): string | null {
     const doca = e.docas.find((d) => d.id === op.interrupcao!.doca_id);
     return doca ? `Operação interrompida na ${doca.codigo}` : "Operação interrompida";
   }
+  return motivoSemRecurso(e, op);
+}
 
+/** Falta de doca ou de equipamento compatível livre; `null` quando há os dois. */
+function motivoSemRecurso(e: EstadoTerminal, op: OperacaoE): string | null {
   const possiveis = docasPossiveis(e, op);
   const livres = possiveis.filter((d) => d.estado === "LIVRE");
   const tipoDoca = op.carga.caracteristicas.includes("refrigerada")
@@ -219,6 +224,34 @@ export function motivoEspera(e: EstadoTerminal, op: OperacaoE): string | null {
     return "Aguarda equipamento compatível";
   }
   return null;
+}
+
+/**
+ * O que acontece se o operador iniciar (ou retomar) a operação agora. Usa a mesma seleção de
+ * recursos do `start` (`selecionarRecursos`): a interface mostra a prévia e habilita o botão
+ * sem repetir a regra. `motivo` explica por que não é possível (só quando `pode` é false).
+ */
+export interface AvaliacaoInicio {
+  pode: boolean;
+  /** Operação interrompida que volta a passar pela alocação. */
+  retomada: boolean;
+  motivo: string | null;
+  vaga: VagaE | null;
+  doca: DocaE | null;
+  equipamento: EquipamentoE | null;
+}
+
+export function avaliarInicio(e: EstadoTerminal, op: OperacaoE): AvaliacaoInicio {
+  const { vaga, doca, equipamento } = selecionarRecursos(e, op);
+  const pode = !!vaga && !!doca && !!equipamento;
+  return {
+    pode,
+    retomada: op.interrupcao !== null,
+    motivo: pode ? null : (motivoSemRecurso(e, op) ?? "Sem vaga compatível livre"),
+    vaga: vaga ?? null,
+    doca: doca ?? null,
+    equipamento: equipamento ?? null,
+  };
 }
 
 /** Texto de "Por que não recebe?" para doca livre sem equipamento compatível disponível. */
