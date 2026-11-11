@@ -43,6 +43,23 @@ export const ACOES_PERMITIDAS: Record<EstadoCaminhao, readonly AcaoOperacao[]> =
   FINALIZADO: [],
 };
 
+/** Valores de `CaracteristicaCarga` (main.py), na ordem de apresentação. */
+export const CARACTERISTICAS: readonly CaracteristicaCarga[] = [
+  "comum",
+  "prioritária",
+  "perigosa",
+  "refrigerada",
+  "frágil",
+];
+
+/** `FabricaOperacao.criar`: estado inicial coerente com a documentação e a inspeção. */
+export const estadoInicial = (documentacaoRegular: boolean, exigeInspecao: boolean): EstadoCaminhao =>
+  !documentacaoRegular
+    ? "AGUARDANDO_DOCUMENTACAO"
+    : exigeInspecao
+      ? "AGUARDANDO_INSPECAO"
+      : "AGUARDANDO_ENTRADA";
+
 /** Estados que entram na fila (`FilaAtendimento.ordenar`). */
 export const ESTADOS_NA_FILA: readonly EstadoCaminhao[] = [
   "AGUARDANDO_ENTRADA",
@@ -110,17 +127,37 @@ export const areaDe = (e: EstadoTerminal, r: { area_id: string }): AreaE => {
   return area;
 };
 
-/** Condições de área comuns a vaga e doca (alocar_e_iniciar / autorizar_entrada). */
-export function areaAdequada(area: AreaE, o: OperacaoE, exigirPerigosa = true): boolean {
-  if (area.interditada) return false;
-  if (exige(o, "refrigerada") && !area.refrigerada) return false;
-  if (exige(o, "perigosa") && exigirPerigosa && !area.autorizada_carga_perigosa) return false;
-  return true;
+/**
+ * Motivo pelo qual a área não serve à carga, ou `null` quando serve. Condições
+ * comuns a vaga e doca (`alocar_e_iniciar` / `autorizar_entrada`). É a única
+ * definição: `areaAdequada` e os textos de recusa saem dela.
+ */
+export function motivoAreaInadequada(area: AreaE, o: OperacaoE, exigirPerigosa = true): string | null {
+  if (area.interditada) return "Área interditada";
+  if (exige(o, "refrigerada") && !area.refrigerada) return "Área sem refrigeração";
+  if (exige(o, "perigosa") && exigirPerigosa && !area.autorizada_carga_perigosa) {
+    return "Área não autorizada para carga perigosa";
+  }
+  return null;
 }
 
-/** Vaga livre e adequada à carga (`autorizar_entrada` e escolha em `alocar_e_iniciar`). */
-export const vagaAdequada = (e: EstadoTerminal, v: VagaE, o: OperacaoE) =>
-  v.estado === "LIVRE" && areaAdequada(areaDe(e, v), o);
+export const areaAdequada = (area: AreaE, o: OperacaoE, exigirPerigosa = true): boolean =>
+  motivoAreaInadequada(area, o, exigirPerigosa) === null;
+
+/**
+ * Motivo pelo qual a vaga não pode receber a operação, ou `null` quando pode
+ * (`autorizar_entrada` e escolha em `alocar_e_iniciar`): vaga LIVRE em área adequada.
+ */
+export function motivoVagaIndisponivel(e: EstadoTerminal, v: VagaE, o: OperacaoE): string | null {
+  if (v.estado === "OCUPADO") return "Ocupada";
+  if (v.estado === "EM_MANUTENCAO") return "Em manutenção";
+  if (v.estado !== "LIVRE") return "Indisponível";
+  return motivoAreaInadequada(areaDe(e, v), o);
+}
+
+/** Vaga livre e adequada à carga. */
+export const vagaAdequada = (e: EstadoTerminal, v: VagaE, o: OperacaoE): boolean =>
+  motivoVagaIndisponivel(e, v, o) === null;
 
 /** Doca livre e adequada (`alocar_e_iniciar`): tipo livre ou igual ao da operação. */
 export const docaAdequada = (e: EstadoTerminal, d: DocaE, o: OperacaoE) =>

@@ -5,5 +5,6 @@
 export * from "./tipos";
 export * from "./regras";
 export * from "./derivados";
-export { executar, responsavelPara, novoIdPadrao } from "./acoes";
+export { executar, responsavelDaAcao, responsavelPara, novoIdPadrao } from "./acoes";
 export { verificarInvariantes, type Violacao } from "./invariantes";
+export * from "./validacao";

@@ -25,9 +25,11 @@ import {
   areaDe,
   equipamentoCompativel,
   minutosEntre,
+  motivoVagaIndisponivel,
   ordenarFila,
 } from "./regras";
 import type { DocaE, EstadoTerminal, OcorrenciaE, OperacaoE } from "./tipos";
+import { normalizarPlaca } from "./validacao";
 
 /** "A", "A e B", "A, B e C". */
 export const juntar = (itens: string[]) =>
@@ -92,6 +94,34 @@ export function filaDe(e: EstadoTerminal, agora: Date): Array<ItemFila & { motiv
     fatores: fatoresDaFila(e, op, espera_minutos),
     motivo_espera: motivoEspera(e, op),
   }));
+}
+
+/* ---------- Entrada no pátio ---------- */
+
+/** Vaga como candidata à entrada de uma operação, com o motivo quando não serve. */
+export interface OpcaoVaga {
+  vaga_id: string;
+  codigo: string;
+  area: string;
+  disponivel: boolean;
+  /** Preenchido só quando `disponivel` é false (mesma regra de `autorizar_entrada`). */
+  motivo: string | null;
+}
+
+/** Todas as vagas, por código, marcando quais podem receber a operação agora. */
+export function vagasParaEntrada(e: EstadoTerminal, op: OperacaoE): OpcaoVaga[] {
+  return e.vagas
+    .map((v) => {
+      const motivo = motivoVagaIndisponivel(e, v, op);
+      return { vaga_id: v.id, codigo: v.codigo, area: areaDe(e, v).nome, disponivel: motivo === null, motivo };
+    })
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, "pt-BR", { numeric: true }));
+}
+
+/** Caminhão já cadastrado para a placa (qualquer grafia), ou `null`. */
+export function caminhaoPorPlaca(e: EstadoTerminal, placa: string) {
+  const alvo = normalizarPlaca(placa);
+  return e.operacoes.find((o) => o.caminhao.placa === alvo)?.caminhao ?? null;
 }
 
 /* ---------- Painel ---------- */

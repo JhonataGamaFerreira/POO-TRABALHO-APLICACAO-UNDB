@@ -142,7 +142,10 @@ describe("chegada (FabricaOperacao)", () => {
 
   it("exige motorista, documento, placa, transportadora, carga e ao menos uma característica", () => {
     const e = terminalBase();
-    erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ placa: " " }) }), /motorista, documento, placa/);
+    erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ placa: " " }) }), /Informe a placa/);
+    erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ nome_motorista: " " }) }), /nome do motorista/);
+    erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ documento_motorista: "" }) }), /documento do motorista/);
+    erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ transportadora: "" }) }), /transportadora/);
     erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ descricao_carga: "" }) }), /descrição da carga/);
     erro(() => rodar(e, { tipo: "criar-operacao", dados: chegada({ caracteristicas: [] }) }), /característica/);
   });
@@ -150,7 +153,7 @@ describe("chegada (FabricaOperacao)", () => {
   it("normaliza a placa e reaproveita o caminhão já cadastrado", () => {
     let r = rodar(terminalBase(), { tipo: "criar-operacao", dados: chegada() });
     const primeira = r.estado.operacoes[0];
-    assert.equal(primeira.caminhao.placa, "ABC1D23");
+    assert.equal(primeira.caminhao.placa, "ABC-1D23");
     r = rodar(r.estado, { tipo: "criar-operacao", dados: chegada({ nome_motorista: "Outro" }) });
     assert.equal(r.estado.operacoes.length, 2);
     assert.equal(r.estado.operacoes[1].caminhao.id, primeira.caminhao.id);

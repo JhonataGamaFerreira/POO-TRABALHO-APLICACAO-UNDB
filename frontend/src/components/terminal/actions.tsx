@@ -24,6 +24,8 @@ const tamanhos = {
   md: "h-9 px-3.5",
   lg: "h-11 px-4",
   sm: "h-8 px-2.5",
+  /** 28 px: botão compacto da barra superior (Figma 10 · Shell / Top bar). */
+  xs: "h-7 px-2.5",
 } as const;
 
 interface Props {

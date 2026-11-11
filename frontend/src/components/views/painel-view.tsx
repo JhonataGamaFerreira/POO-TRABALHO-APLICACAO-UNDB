@@ -6,6 +6,7 @@ import { EsqueletoPagina } from "@/components/layout/esqueleto";
 import { useContextoTerminal, useParametros } from "@/store/use-contexto";
 import { ContextPanel } from "@/components/layout/context-panel";
 import { Cartao, PageHeader, Secao } from "@/components/layout/page-header";
+import { FormChegada } from "@/components/terminal/form-chegada";
 import { Legenda } from "@/components/terminal/legend";
 import { PainelOcorrencia, resumoCaminhao } from "@/components/terminal/paineis";
 import { ResourceMini } from "@/components/terminal/resource-cells";
@@ -27,7 +28,8 @@ export function PainelView() {
   const t = useContextoTerminal();
   if (!t) return <EsqueletoPagina />;
 
-  const selecionada = t.abertas.find((o) => o.id === parametro(sp, "ocorrencia"));
+  const registrando = parametro(sp, "registrar") === "chegada";
+  const selecionada = registrando ? undefined : t.abertas.find((o) => o.id === parametro(sp, "ocorrencia"));
 
   // Operações afetadas pela ocorrência selecionada, por etapa e por caminhão.
   const afetadas = selecionada ? t.operacoesAfetadas(selecionada) : [];
@@ -271,6 +273,8 @@ export function PainelView() {
 
         <Legenda />
       </main>
+
+      {registrando && <FormChegada />}
 
       {selecionada && (
         <ContextPanel rotulo="Detalhe da ocorrência" fecharHref="/dashboard">

@@ -19,6 +19,7 @@ import {
   type RecursoResolvido,
 } from "@/lib/terminal";
 import { montarHref, type TerminalCarregado } from "@/lib/terminal-contexto";
+import { AcoesOperacao } from "./acoes-operacao";
 import type { Operacao } from "@/types/terminal";
 import type { DocaProposta, OcorrenciaProposta } from "@/types/terminal-proposto";
 import {
@@ -501,6 +502,8 @@ export function PainelCaminhao({ t, op }: { t: T; op: Operacao }) {
         montarHref("/dashboard", { ocorrencia: o.id }),
       )}
       linkPatio={linkPatio}
+      acoes={<AcoesOperacao t={t} op={op} />}
+      responsavelDe={(id) => (id ? (t.funcionarios.find((f) => f.id === id)?.nome ?? null) : null)}
     />
   );
 }

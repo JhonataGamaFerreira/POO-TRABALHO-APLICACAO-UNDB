@@ -16,10 +16,13 @@ import {
   metricaOcorrencia,
   ordenarOcorrencias,
   resumoDoPainel,
+  vagasParaEntrada,
   restricaoDoca,
   temposMinutos,
   ESTADOS_ORDEM,
   type EstadoTerminal,
+  type Funcionario,
+  type OpcaoVaga,
 } from "@/domain";
 import type { AreaE } from "@/domain";
 import type {
@@ -42,6 +45,10 @@ export interface Terminal {
   recursos: RecursosProposta;
   tempos: RelatorioTempos;
   compativeis: ReturnType<typeof docasCompativeis>[];
+  /** Vagas candidatas à entrada de cada operação que aguarda entrada. */
+  entrada: Array<{ operacao_id: string; vagas: OpcaoVaga[] }>;
+  /** Funcionários fixos do terminal (nome e função, para mostrar o responsável). */
+  funcionarios: Array<Pick<Funcionario, "id" | "nome" | "funcao">>;
 }
 
 const comoArea = (a: AreaE): AreaProposta => ({ ...a });
@@ -124,5 +131,10 @@ export function montarTerminal(e: EstadoTerminal, agora: Date): Terminal {
   const naFila = new Set(fila.map((i) => i.operacao_id));
   const compativeis = e.operacoes.filter((o) => naFila.has(o.id)).map((o) => docasCompativeis(e, o));
 
-  return { dashboard, operacoes, fila, ocorrencias, recursos, tempos: e.tempos, compativeis };
+  const entrada = e.operacoes
+    .filter((o) => o.estado === "AGUARDANDO_ENTRADA")
+    .map((o) => ({ operacao_id: o.id, vagas: vagasParaEntrada(e, o) }));
+  const funcionarios = e.funcionarios.map(({ id, nome, funcao }) => ({ id, nome, funcao }));
+
+  return { dashboard, operacoes, fila, ocorrencias, recursos, tempos: e.tempos, compativeis, entrada, funcionarios };
 }

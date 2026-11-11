@@ -386,6 +386,8 @@ export function DetalheCaminhao({
   etapa,
   ocorrencias,
   linkPatio,
+  acoes,
+  responsavelDe,
 }: {
   op: Operacao;
   item: ItemFilaProposto | null;
@@ -394,6 +396,10 @@ export function DetalheCaminhao({
   etapa: { desde: string; media: string | null };
   ocorrencias: LigacaoOcorrencia[];
   linkPatio: string | null;
+  /** Ação da etapa atual ("Próximo passo"), quando há. */
+  acoes?: React.ReactNode;
+  /** Nome do funcionário pelo id (responsável da operação e dos eventos). */
+  responsavelDe?: (id: string | null) => string | null;
 }) {
   return (
     <>
@@ -410,6 +416,8 @@ export function DetalheCaminhao({
         </div>
       </header>
 
+      {acoes}
+
       <SecaoPainel titulo="Etapa atual">
         <dl>
           <Campo rotulo="Etapa">{etapaLonga(op.estado)}</Campo>
@@ -424,6 +432,9 @@ export function DetalheCaminhao({
         <Campo rotulo="Transportadora">{op.caminhao.transportadora.nome}</Campo>
         <Campo rotulo="Operação">{op.tipo === "carga" ? "Carga" : "Descarga"}</Campo>
         <Campo rotulo="Chegada">{formatarDataHora(op.chegada_em)}</Campo>
+        {responsavelDe?.(op.funcionario_responsavel_id) && (
+          <Campo rotulo="Responsável">{responsavelDe(op.funcionario_responsavel_id)}</Campo>
+        )}
         <Campo rotulo="Espera">
           {formatarDuracao(item?.espera_minutos ?? op.tempos_minutos.espera)}
         </Campo>
@@ -464,7 +475,10 @@ export function DetalheCaminhao({
           <ol className="flex flex-col gap-1.5 border-l border-line pl-3">
             {op.historico.map((e) => (
               <li key={e.id} className="text-[13px]">
-                <span className="font-mono text-xs text-t3">{formatarDataHora(e.ocorrido_em)}</span>
+                <span className="font-mono text-xs text-t3">
+                  {formatarDataHora(e.ocorrido_em)}
+                  {responsavelDe?.(e.responsavel_id) && ` · ${responsavelDe(e.responsavel_id)}`}
+                </span>
                 <p className="text-t1">
                   {e.estado_novo ? `→ ${etapaLonga(e.estado_novo)}` : e.descricao}
                 </p>

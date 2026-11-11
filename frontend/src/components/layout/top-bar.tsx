@@ -1,6 +1,8 @@
 "use client";
 
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
+import { Acao } from "@/components/terminal/actions";
+import { montarHref } from "@/lib/terminal-contexto";
 import { useAgora } from "@/store/use-terminal";
 import { MenuCenario } from "./menu-cenario";
 
@@ -63,6 +65,11 @@ export function TopBar() {
         <DataHora />
       </span>
       <MenuCenario />
+      {/* Ação global (Figma 10 · Shell / Top bar): contornada, 28 px, último item à direita. O formulário abre no Painel. */}
+      <Acao href={montarHref("/dashboard", { registrar: "chegada" })} variante="outline" tamanho="xs">
+        <Plus className="size-4" aria-hidden="true" />
+        <span className="max-sm:sr-only">Registrar chegada</span>
+      </Acao>
     </header>
   );
 }

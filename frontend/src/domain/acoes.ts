@@ -10,7 +10,8 @@
  *  - `responsavelPara`: quem executa cada ação (o front não tem login). O
  *    backend só EXIGE função em: iniciar (operador habilitado), resolver
  *    ocorrência, manutenção e interdição (supervisão). As demais usam o papel
- *    natural da ação.
+ *    natural da ação. Na chegada o backend não recebe responsável nem grava
+ *    evento; o front guarda a recepção em `funcionario_responsavel_id`.
  *  - títulos curtos, métrica e vínculo de interrupção da doca.
  */
 import type { EstadoCaminhao, TipoOcorrencia, TipoEvento } from "@/types/terminal";
@@ -20,6 +21,7 @@ import {
   docaAdequada,
   ehSupervisao,
   equipamentoCompativel,
+  estadoInicial,
   exige,
   habilitacaoPara,
   habilitado,
@@ -27,6 +29,7 @@ import {
   transicaoPermitida,
   vagaAdequada,
 } from "./regras";
+import { normalizarPlaca, primeiroErro, validarNovaOperacao } from "./validacao";
 import {
   type Acao,
   type Contexto,
@@ -58,8 +61,8 @@ const rotuloEstado = (s: EstadoCaminhao) => s;
 /* ---------- Responsável (HIPÓTESE: sem login) ---------- */
 
 /** Papel natural de cada ação. Só os marcados com * são exigidos pelo backend. */
-const PAPEL: Record<Acao["tipo"], FuncaoFuncionario | null> = {
-  "criar-operacao": null,
+const PAPEL: Record<Acao["tipo"], FuncaoFuncionario> = {
+  "criar-operacao": "RECEPCAO",
   documentation: "RECEPCAO",
   inspection: "INSPETOR",
   "yard-entry": "RECEPCAO",
@@ -73,29 +76,29 @@ const PAPEL: Record<Acao["tipo"], FuncaoFuncionario | null> = {
   "area-interdicao": "SUPERVISOR", // *
 };
 
-export function responsavelPara(
+/** Funcionário que executa uma ação do tipo dado (`op` só importa em `start`: habilitação). */
+export function responsavelDaAcao(
   e: EstadoTerminal,
-  acao: Acao,
+  tipo: Acao["tipo"],
   op?: OperacaoE,
 ): Funcionario {
-  const papel = PAPEL[acao.tipo];
-  if (!papel) throw new Error("Ação sem responsável.");
+  const papel = PAPEL[tipo];
   const candidatos = e.funcionarios.filter((f) =>
     papel === "SUPERVISOR" ? ehSupervisao(f) : f.funcao === papel,
   );
-  const escolhido =
-    acao.tipo === "start" && op
-      ? candidatos.find((f) => habilitado(f, op.tipo))
-      : candidatos[0];
+  const escolhido = tipo === "start" && op ? candidatos.find((f) => habilitado(f, op.tipo)) : candidatos[0];
   if (!escolhido) {
     throw new ErroDeDominio(
-      acao.tipo === "start" && op
+      tipo === "start" && op
         ? `Funcionário não está habilitado para ${habilitacaoPara(op.tipo)}.`
         : "Nenhum funcionário disponível para esta ação.",
     );
   }
   return escolhido;
 }
+
+export const responsavelPara = (e: EstadoTerminal, acao: Acao, op?: OperacaoE): Funcionario =>
+  responsavelDaAcao(e, acao.tipo, op);
 
 /* ---------- Histórico, estado e ocorrência (Operacao) ---------- */
 
@@ -208,17 +211,21 @@ const placaDe = (op: OperacaoE) => op.caminhao.placa;
 
 /* ---------- Ações ---------- */
 
-function criarOperacao(e: EstadoTerminal, ctx: Contexto, dados: Extract<Acao, { tipo: "criar-operacao" }>["dados"]): ResultadoAcao {
+/** `POST /api/operations` + `FabricaOperacao.criar`. */
+function criarOperacao(
+  e: EstadoTerminal,
+  ctx: Contexto,
+  dados: Extract<Acao, { tipo: "criar-operacao" }>["dados"],
+  resp: Funcionario,
+): ResultadoAcao {
+  const erro = primeiroErro(validarNovaOperacao(dados));
+  if (erro) throw new ErroDeDominio(erro);
+
   const nome = dados.nome_motorista.trim();
   const documento = dados.documento_motorista.trim();
-  const placa = dados.placa.trim().toUpperCase();
+  const placa = normalizarPlaca(dados.placa);
   const transportadora = dados.transportadora.trim();
   const carga = dados.descricao_carga.trim();
-  if (!nome || !documento || !placa || !transportadora) {
-    throw new ErroDeDominio("Informe motorista, documento, placa e transportadora.");
-  }
-  if (!carga) throw new ErroDeDominio("Informe a descrição da carga.");
-  if (!dados.caracteristicas.length) throw new ErroDeDominio("Informe ao menos uma característica da carga.");
 
   // Caminhão já cadastrado pela placa é reaproveitado (api.py: criar_operacao).
   const existente = e.operacoes.find((o) => o.caminhao.placa === placa)?.caminhao;
@@ -231,25 +238,18 @@ function criarOperacao(e: EstadoTerminal, ctx: Contexto, dados: Extract<Acao, { 
         transportadora: { id: ctx.novoId(), nome: transportadora },
       };
 
-  // FabricaOperacao.criar: estado inicial coerente.
-  const estado: EstadoCaminhao = !dados.documentacao_regular
-    ? "AGUARDANDO_DOCUMENTACAO"
-    : dados.exige_inspecao
-      ? "AGUARDANDO_INSPECAO"
-      : "AGUARDANDO_ENTRADA";
-
   const op: OperacaoE = {
     id: ctx.novoId(),
     caminhao,
-    carga: { descricao: carga, caracteristicas: [...dados.caracteristicas] },
+    carga: { descricao: carga, caracteristicas: [...new Set(dados.caracteristicas)] },
     tipo: dados.tipo,
     chegada_em: ctx.agora.toISOString(),
-    estado,
+    estado: estadoInicial(dados.documentacao_regular, dados.exige_inspecao),
     documentacao_regular: dados.documentacao_regular,
     vaga_id: null,
     doca_id: null,
     equipamento_id: null,
-    funcionario_responsavel_id: null,
+    funcionario_responsavel_id: resp.id,
     iniciada_em: null,
     finalizada_em: null,
     cancelada: false,
@@ -259,6 +259,8 @@ function criarOperacao(e: EstadoTerminal, ctx: Contexto, dados: Extract<Acao, { 
     duracao_estimada_minutos: null,
     interrupcao: null,
   };
+  // Evento do front/store (o backend não grava evento na chegada): ação, responsável e instante.
+  registrarEvento(ctx, op, "CHEGADA", resp, "Chegada registrada.");
   e.operacoes.push(op);
   return { mensagem: `Chegada registrada: ${placa}.`, operacaoId: op.id };
 }
@@ -516,11 +518,11 @@ export function executar(
 ): { estado: EstadoTerminal; resultado: ResultadoAcao } {
   const e = structuredClone(estado);
   const operacao = "operacaoId" in acao ? obterOperacao(e, acao.operacaoId) : undefined;
-  const resp = acao.tipo === "criar-operacao" ? null : responsavelPara(e, acao, operacao);
+  const resp = responsavelPara(e, acao, operacao);
   let resultado: ResultadoAcao;
   switch (acao.tipo) {
     case "criar-operacao":
-      resultado = criarOperacao(e, ctx, acao.dados);
+      resultado = criarOperacao(e, ctx, acao.dados, resp);
       break;
     case "documentation":
       resultado = validarDocumentacao(e, ctx, operacao!, acao.regular, resp!);
