@@ -23,7 +23,9 @@ export function assinarAvisos(o: Ouvinte) {
   return () => ouvintes.delete(o);
 }
 export const snapshotAvisos = () => lista;
-export const snapshotAvisosServidor = (): Aviso[] => [];
+/** Referência estável: o React exige que o snapshot do servidor seja sempre o mesmo objeto. */
+const SEM_AVISOS: Aviso[] = [];
+export const snapshotAvisosServidor = (): Aviso[] => SEM_AVISOS;
 
 export function fecharAviso(id: number) {
   lista = lista.filter((a) => a.id !== id);
