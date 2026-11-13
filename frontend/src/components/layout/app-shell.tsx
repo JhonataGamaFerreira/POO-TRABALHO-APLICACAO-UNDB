@@ -1,3 +1,4 @@
+import { Avisos } from "./avisos";
 import { SidebarNav } from "./sidebar-nav";
 import { TopBar } from "./top-bar";
 
@@ -9,6 +10,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <SidebarNav />
         <div className="min-w-0 flex-1">{children}</div>
       </div>
+      <Avisos />
     </div>
   );
 }

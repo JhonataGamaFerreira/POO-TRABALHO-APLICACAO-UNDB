@@ -19,6 +19,8 @@ import {
   type RecursoResolvido,
 } from "@/lib/terminal";
 import { montarHref, type TerminalCarregado } from "@/lib/terminal-contexto";
+import { AcoesOcorrencia, AcoesRecurso } from "./acoes-recursos";
+import { AcoesOperacao } from "./acoes-operacao";
 import type { Operacao } from "@/types/terminal";
 import type { DocaProposta, OcorrenciaProposta } from "@/types/terminal-proposto";
 import {
@@ -219,6 +221,7 @@ export function PainelOcorrencia({ t, o, modo }: { t: T; o: OcorrenciaProposta; 
       consulta={consulta}
       linkPatio={noPatio ? undefined : montarHref("/patio", { ocorrencia: o.id, origem: "painel" })}
       voltarPainel={noPatio && modo.base.origem === "painel" ? montarHref("/dashboard", { ocorrencia: o.id }) : undefined}
+      acoes={<AcoesOcorrencia id={o.id} tipo={o.tipo} aberta={o.estado === "ABERTA"} />}
     />
   );
 }
@@ -322,6 +325,7 @@ export function PainelRecurso({
         }
         caminhao={caminhaoDe(v.operacao_id)}
         ocorrencias={ligadas(v.id, v.area.id)}
+        acoes={<AcoesRecurso t={t} tipo="vaga" id={v.id} />}
       />
     );
   }
@@ -432,6 +436,7 @@ export function PainelRecurso({
           causa ? { rotulo: `Ver Ocorrência ${t.numeroOcorrencia(causa.o)}`, href: hrefOcorrencia(causa.o.id) } : null
         }
         voltar={restrita ? { rotulo: "Ver fila completa →", href: "/fila" } : null}
+        acoes={<AcoesRecurso t={t} tipo="doca" id={d.id} />}
       />
     );
   }
@@ -472,6 +477,7 @@ export function PainelRecurso({
         acaoPrimaria={
           causa ? { rotulo: `Ver Ocorrência ${t.numeroOcorrencia(causa.o)}`, href: hrefOcorrencia(causa.o.id) } : null
         }
+        acoes={<AcoesRecurso t={t} tipo="equipment" id={e.id} />}
       />
     );
   }
@@ -501,6 +507,8 @@ export function PainelCaminhao({ t, op }: { t: T; op: Operacao }) {
         montarHref("/dashboard", { ocorrencia: o.id }),
       )}
       linkPatio={linkPatio}
+      acoes={<AcoesOperacao t={t} op={op} />}
+      responsavelDe={(id) => (id ? (t.funcionarios.find((f) => f.id === id)?.nome ?? null) : null)}
     />
   );
 }

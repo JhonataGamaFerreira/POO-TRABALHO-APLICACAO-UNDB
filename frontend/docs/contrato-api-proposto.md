@@ -2,7 +2,7 @@
 
 > **Status: PROPOSTA para discussão com o responsável pelo back-end (Jhonata).**
 > Nada aqui é regra de negócio confirmada nem contrato firmado. O front-end hoje
-> usa dados simulados (`src/mocks/terminal.ts`); a API real **não** foi integrada
+> usa um cenário de demonstração em `src/mocks/cenario.ts`, processado pelo motor de `src/domain/`; a API real **não** foi integrada
 > e o back-end **não** foi alterado.
 
 Referência do contrato atual: back-end, commit `b16a874` (`api.py` / `main.py`).
@@ -59,6 +59,7 @@ Todos DEPENDEM DO BACK-END. Origem: necessidades dos wireframes A1, A2, B1, B2, 
 
 | Campo | Tipo | Observação |
 |---|---|---|
+| `historico[].tipo = "CHEGADA"` | `string` | **PROPOSTA (hoje só do front/store).** O back-end não grava evento na chegada e `TipoEvento` não tem este valor. A store local o registra ao criar a operação (`descricao` "Chegada registrada.", `responsavel_id` da recepção, `ocorrido_em` = `chegada_em`, estados nulos) para que o histórico mostre quem registrou e quando. Se o back-end passar a gravar o evento, o front deixa de gerá-lo. |
 | `duracao_estimada_minutos` | `number \| null` | **ILUSTRATIVO**. O back-end não tem esse conceito. Alimenta a barra "42 de 70 min". A interface apresenta a barra como parte natural da operação ("42 de 70 min"), sem aviso técnico. Sem o campo, a barra some e aparece só o tempo operado. |
 
 ### Fila (`GET /api/queue`)
@@ -220,7 +221,10 @@ Contagens exibidas (ativos, livres, ocupadas, indisponíveis) são **derivadas d
 7. **Duração estimada**: se existirá. Hoje é só ilustração do design; sem ela a barra deve sair.
 8. **Códigos de vaga/doca**, `motivo_interdicao`, `manutencao_ate`, `motivo_espera`, `titulo`.
 9. **"Hoje"** em `finalizados_hoje` (dia civil ou turno).
-10. **Severidade**: o design só tem dois níveis visuais (Crítico/Atenção) e a API tem quatro (`baixa`, `media`, `alta`, `critica`). A correspondência (`critica` → Crítico; `alta`/`media` → Atenção; `baixa` → sem glifo) é HIPÓTESE do front, e o texto exibido segue o mesmo agrupamento ("Crítico" / "Atenção"; ver seção 7).
+10. **Inspeção na chegada**: `POST /api/operations` aceita `exige_inspecao` (padrão `false`), que só tem efeito com `documentacao_regular = true` e é o único caminho para `AGUARDANDO_INSPECAO`: `validar_documentacao` com documentação regular leva direto a `AGUARDANDO_ENTRADA`. Não há critério que decida a necessidade de inspeção (o flag vem do cliente e a operação não o guarda), nem endpoint que encaminhe para inspeção depois da documentação, embora `TRANSICOES` permita `AGUARDANDO_DOCUMENTACAO → AGUARDANDO_INSPECAO` e o README fale em "encaminhar para inspeção quando necessário". Confirmar com o responsável do back-end quem decide e em que momento.
+11. **Placa**: o back-end só aplica `strip().upper()`; compara o texto como chega (`ABC1D23` ≠ `ABC-1D23`). O front normaliza para `AAA-1A23` (exibição e busca). Confirmar se o back-end normaliza ou se deve receber a placa já normalizada.
+12. **Severidade**: o design só tem dois níveis visuais (Crítico/Atenção) e a API tem quatro (`baixa`, `media`, `alta`, `critica`). A correspondência (`critica` → Crítico; `alta`/`media` → Atenção; `baixa` → sem glifo) é HIPÓTESE do front, e o texto exibido segue o mesmo agrupamento ("Crítico" / "Atenção"; ver seção 7).
+13. **Execução da operação (Etapa 3)**: início direto de `NO_PATIO`, cancelamento em andamento, prévia de alocação, retomada, `interrupcao`, responsável das ações e `motivo_interdicao` estão detalhados em `divergencias-backend-mvp.md`.
 
 ## 6. Compatibilidade com a API atual
 
@@ -249,5 +253,5 @@ O front tolera a ausência de cada campo proposto:
 - Legenda: três grupos separados — estado do recurso (livre, ocupado, em manutenção), condições (interrupção, área interditada, equipamento quebrado) e severidade (crítico, atenção). Área interditada e equipamento quebrado compartilham o padrão visual hachurado vermelho do wireframe.
 - Os wireframes mostram "Referência 14:35 · dados simulados", "+ Registrar chegada", itens de menu futuros (Equipamentos, Caminhões, Ocorrências, Relatórios), "Planta/Agenda" (B4), atalho ⌘K, avatar, "Esquema simplificado · não é a planta real", "Média por etapa · simulada", "Ordenado por impacto · critério definido pelo back-end" e notas sobre campos propostos. **Decisão (revisão final):** a interface não reproduz esses elementos/textos; mostra apenas "Atualizado às HH:MM", três itens de menu (Painel, Fila, Pátio e docas) e nenhum botão sem ação. Os wireframes aprovados e as páginas 08/09 do Figma não foram alterados.
 - Rótulos de severidade: o DS tem dois níveis visuais. A interface exibe "Crítico" (`critica`) e "Atenção" (`alta`/`media`); `baixa` permanece "Baixa". O dado original continua na API.
-- A busca funciona só por placa. Ações de escrita (registrar chegada, resolver ocorrência, validar documentação, iniciar/interromper/finalizar operação etc.) **não** existem na interface; dependem da integração e de definição do back-end sobre `acoes_permitidas`. O painel do caminhão não lista ações.
+- A busca funciona só por placa. Na Etapa 2 do MVP a interface passou a ter **registrar chegada, validar documentação, registrar inspeção e autorizar entrada**; na Etapa 3, **iniciar, retomar, concluir, liberar, interromper e cancelar operação, resolver ocorrência, manutenção de recursos e interdição de área** (tudo sobre o estado local, sem API). O painel do caminhão lista a ação da etapa atual, derivada de `acoes_permitidas`, mais "Interromper" (só em operação) e "Cancelar operação". As diferenças em relação ao back-end e os ajustes necessários estão em `divergencias-backend-mvp.md`.
 - A barra de progresso das docas e a faixa de espera continuam dependendo de campos propostos (seção 2); a explicação fica só aqui.

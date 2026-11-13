@@ -1,6 +1,34 @@
-import { Search } from "lucide-react";
-import { formatarHora } from "@/lib/terminal";
-import { REFERENCIA_SIMULADA } from "@/services/terminal";
+"use client";
+
+import { Plus, Search } from "lucide-react";
+import { Acao } from "@/components/terminal/actions";
+import { montarHref } from "@/lib/terminal-contexto";
+import { useAgora } from "@/store/use-terminal";
+import { MenuCenario } from "./menu-cenario";
+
+const diaFormatador = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "short",
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+const horaFormatador = new Intl.DateTimeFormat("pt-BR", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Sao_Paulo",
+});
+
+/** "seg., 09/11 · 14:35" a partir do relógio do navegador. */
+function DataHora() {
+  const agora = useAgora();
+  if (!agora) return <span aria-hidden="true">&nbsp;</span>;
+  const d = new Date(agora);
+  return (
+    <time dateTime={d.toISOString()}>
+      {diaFormatador.format(d).replace(".,", ",")} · {horaFormatador.format(d)}
+    </time>
+  );
+}
 
 export function TopBar() {
   return (
@@ -34,8 +62,14 @@ export function TopBar() {
       </form>
 
       <span className="hidden text-sm text-t3 lg:inline">
-        Atualizado às {formatarHora(REFERENCIA_SIMULADA)}
+        <DataHora />
       </span>
+      <MenuCenario />
+      {/* Ação global (Figma 10 · Shell / Top bar): contornada, 28 px, último item à direita. O formulário abre no Painel. */}
+      <Acao href={montarHref("/dashboard", { registrar: "chegada" })} variante="outline" tamanho="xs">
+        <Plus className="size-4" aria-hidden="true" />
+        <span className="max-sm:sr-only">Registrar chegada</span>
+      </Acao>
     </header>
   );
 }

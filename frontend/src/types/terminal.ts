@@ -67,7 +67,15 @@ export type TipoEvento =
   | "OCORRENCIA"
   | "INSPECAO"
   | "OPERACAO_INICIADA"
-  | "OPERACAO_FINALIZADA";
+  | "OPERACAO_FINALIZADA"
+  /**
+   * SÓ DO FRONT/STORE: o backend não tem este tipo (`TipoEvento` em main.py) nem
+   * grava evento na chegada. A store o registra ao criar a operação para que o
+   * histórico local mostre quando e por quem a chegada foi registrada. Proposta
+   * ao backend em docs/contrato-api-proposto.md; ao integrar a API, o front
+   * continua gerando este evento enquanto o backend não o enviar.
+   */
+  | "CHEGADA";
 
 /** Valores aceitos em `recurso_tipo` de uma ocorrência. */
 export type RecursoTipo = "area" | "vaga" | "doca" | "equipment";
