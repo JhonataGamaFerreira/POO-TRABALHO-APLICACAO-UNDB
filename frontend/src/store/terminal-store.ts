@@ -8,7 +8,7 @@
  *   snapshot é `null` (as telas mostram o esqueleto); o `localStorage` só é lido
  *   no navegador, depois da hidratação.
  * - Dados corrompidos ou de versão incompatível nunca travam a abertura: o
- *   conteúdo antigo vai para uma chave de backup e o cenário inicial é recriado.
+ *   conteúdo antigo vai para uma chave de backup e o cenário padrão (MVP) é recriado.
  * - Mudanças feitas em outra aba chegam pelo evento `storage`.
  * - O relógio é o do navegador. Os horários do estado são absolutos, então o
  *   tempo continua correndo após F5 ou reabertura do navegador.
@@ -21,7 +21,7 @@ import {
   type EstadoTerminal,
   type ResultadoAcao,
 } from "@/domain";
-import { criarCenarioInicial } from "@/mocks/cenario";
+import { CENARIO_PADRAO, criarCenario, type IdCenario } from "@/mocks/cenarios";
 
 export const CHAVE_ESTADO = "terminal-portuario:estado";
 export const CHAVE_BACKUP = "terminal-portuario:backup";
@@ -106,7 +106,8 @@ function inicializar() {
   iniciado = true;
   estado = lerRegistro();
   if (!estado) {
-    estado = criarCenarioInicial(new Date());
+    // Sem dados salvos (ou inutilizáveis): abre o cenário padrão. Com dados, nunca restaura nada.
+    estado = criarCenario(CENARIO_PADRAO, new Date());
     persistir();
   }
   relogio = Date.now();
@@ -117,7 +118,7 @@ function inicializar() {
 function aoMudarOutraAba(ev: StorageEvent) {
   if (ev.key !== CHAVE_ESTADO) return;
   const novo = ev.newValue ? lerRegistro() : null;
-  estado = novo ?? criarCenarioInicial(new Date());
+  estado = novo ?? criarCenario(CENARIO_PADRAO, new Date());
   if (!novo) persistir();
   notificar();
 }
@@ -194,15 +195,17 @@ export function despachar(acao: Acao): ResultadoAcao {
 }
 
 /**
- * Restaura o cenário inicial usando data e hora reais do computador. O estado
- * anterior fica guardado na chave de backup (recuperável pelo console, sem
- * aparecer na interface).
+ * Restaura um cenário (por padrão, o de demonstração MVP) usando data e hora
+ * reais do computador. Só acontece por ação explícita: o estado salvo é
+ * substituído por inteiro pelo cenário escolhido, sem misturar registros. O
+ * estado anterior fica guardado na chave de backup (recuperável pelo console,
+ * sem aparecer na interface).
  */
-export function restaurarCenario() {
+export function restaurarCenario(id: IdCenario = CENARIO_PADRAO) {
   inicializar();
   const anterior = ler(CHAVE_ESTADO);
-  if (anterior) guardarBackup(anterior, "restauração manual do cenário");
-  estado = criarCenarioInicial(new Date());
+  if (anterior) guardarBackup(anterior, `restauração manual do cenário (${id})`);
+  estado = criarCenario(id, new Date());
   persistir();
   atualizarRelogio();
   notificar();

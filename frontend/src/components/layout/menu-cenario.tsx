@@ -4,16 +4,20 @@ import { AlertDialog, DropdownMenu } from "radix-ui";
 import { Ellipsis, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { estiloAcao } from "@/components/terminal/actions";
+import { CENARIOS, ORDEM_CENARIOS, type IdCenario } from "@/mocks/cenarios";
 import { avisar } from "@/store/avisos";
 import { useAcoes } from "@/store/use-terminal";
 
 /**
- * Menu discreto da barra superior. Hoje só tem "Restaurar cenário inicial", que
- * exige confirmação; o foco inicial do diálogo fica em "Cancelar".
+ * Menu discreto da barra superior. Oferece restaurar um dos dois cenários de
+ * demonstração (MVP ou completo). A troca é sempre explícita: exige confirmação,
+ * que avisa que o estado salvo será substituído; o foco inicial do diálogo fica
+ * em "Cancelar".
  */
 export function MenuCenario() {
   const { restaurar } = useAcoes();
-  const [confirmando, setConfirmando] = useState(false);
+  const [escolhido, setEscolhido] = useState<IdCenario | null>(null);
+  const cenario = escolhido ? CENARIOS[escolhido] : null;
 
   return (
     <>
@@ -31,31 +35,41 @@ export function MenuCenario() {
           <DropdownMenu.Content
             align="end"
             sideOffset={6}
-            className="z-50 min-w-56 rounded-ds-lg border border-line bg-surface p-1 shadow-md"
+            className="z-50 min-w-72 rounded-ds-lg border border-line bg-surface p-1 shadow-md"
           >
-            <DropdownMenu.Item
-              onSelect={() => setConfirmando(true)}
-              className="flex h-9 cursor-default items-center gap-2.5 rounded-ds-md px-3 text-sm text-t1 outline-none data-[highlighted]:bg-selected"
-            >
-              <RotateCcw className="size-4 text-t2" aria-hidden="true" />
-              Restaurar cenário inicial
-            </DropdownMenu.Item>
+            <DropdownMenu.Label className="px-3 pt-2 pb-1 text-xs font-medium text-t3">
+              Restaurar cenário
+            </DropdownMenu.Label>
+            {ORDEM_CENARIOS.map((id) => (
+              <DropdownMenu.Item
+                key={id}
+                onSelect={() => setEscolhido(id)}
+                className="flex cursor-default items-start gap-2.5 rounded-ds-md px-3 py-2 text-sm text-t1 outline-none data-[highlighted]:bg-selected"
+              >
+                <RotateCcw className="mt-0.5 size-4 shrink-0 text-t2" aria-hidden="true" />
+                <span className="flex flex-col">
+                  <span>{CENARIOS[id].nome}</span>
+                  <span className="text-xs text-t3">{CENARIOS[id].resumo}</span>
+                </span>
+              </DropdownMenu.Item>
+            ))}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
 
-      <AlertDialog.Root open={confirmando} onOpenChange={setConfirmando}>
+      <AlertDialog.Root open={cenario !== null} onOpenChange={(aberto) => !aberto && setEscolhido(null)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/30" />
           <AlertDialog.Content className="fixed top-1/2 left-1/2 z-50 flex w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-ds-lg border border-line bg-surface p-5 shadow-lg outline-none">
             <div className="flex flex-col gap-2">
               <AlertDialog.Title className="text-base font-semibold text-t1">
-                Restaurar o cenário inicial?
+                Restaurar o {cenario?.nome}?
               </AlertDialog.Title>
               <AlertDialog.Description className="text-sm text-t2">
-                Caminhões, ocupação de vagas, docas e equipamentos, ocorrências e histórico voltam ao
-                cenário inicial, com os horários ajustados para agora. As alterações feitas até aqui
-                serão descartadas.
+                {cenario?.resumo}. Tudo o que está salvo neste navegador (caminhões, ocupação de
+                vagas, docas e equipamentos, ocorrências e histórico) será substituído por este
+                cenário, com os horários ajustados para agora. As alterações feitas até aqui serão
+                descartadas.
               </AlertDialog.Description>
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -63,8 +77,9 @@ export function MenuCenario() {
               <AlertDialog.Action
                 className={estiloAcao("primary", "md")}
                 onClick={() => {
-                  restaurar();
-                  avisar("sucesso", "Cenário restaurado.");
+                  if (!cenario) return;
+                  restaurar(cenario.id);
+                  avisar("sucesso", `Cenário restaurado: ${cenario.nome}.`);
                 }}
               >
                 Restaurar cenário

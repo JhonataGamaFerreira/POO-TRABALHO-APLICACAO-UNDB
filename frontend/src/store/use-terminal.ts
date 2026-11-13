@@ -2,6 +2,7 @@
 
 import { useMemo, useSyncExternalStore } from "react";
 import type { Acao, EstadoTerminal, ResultadoAcao } from "@/domain";
+import type { IdCenario } from "@/mocks/cenarios";
 import { montarTerminal, type Terminal } from "./selecionar";
 import {
   assinar,
@@ -36,5 +37,5 @@ const ACOES = { executar: despachar, restaurar: restaurarCenario } as const;
 
 export const useAcoes = (): {
   executar: (acao: Acao) => ResultadoAcao;
-  restaurar: () => void;
+  restaurar: (cenario?: IdCenario) => void;
 } => ACOES;
