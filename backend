@@ -1,0 +1,683 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum, auto
+from typing import Callable, Iterable, Protocol
+from uuid import UUID, uuid4
+
+
+def agora_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class ErroDeDominio(ValueError):
+    """Erro para operações que violam uma regra do domínio."""
+
+
+class TipoOperacao(Enum):
+    CARGA = "carga"
+    DESCARGA = "descarga"
+
+
+class CaracteristicaCarga(Enum):
+    COMUM = "comum"
+    FRAGIL = "frágil"
+    REFRIGERADA = "refrigerada"
+    PERIGOSA = "perigosa"
+    PRIORITARIA = "prioritária"
+
+
+class EstadoCaminhao(Enum):
+    AGUARDANDO_DOCUMENTACAO = auto()
+    AGUARDANDO_INSPECAO = auto()
+    AGUARDANDO_ENTRADA = auto()
+    NO_PATIO = auto()
+    AGUARDANDO_RECURSO = auto()
+    EM_OPERACAO = auto()
+    AGUARDANDO_LIBERACAO = auto()
+    FINALIZADO = auto()
+
+
+class EstadoRecurso(Enum):
+    LIVRE = auto()
+    DISPONIVEL = auto()
+    OCUPADO = auto()
+    EM_MANUTENCAO = auto()
+
+
+class EstadoOcorrencia(Enum):
+    ABERTA = auto()
+    RESOLVIDA = auto()
+
+
+class SeveridadeOcorrencia(Enum):
+    BAIXA = "baixa"
+    MEDIA = "media"
+    ALTA = "alta"
+    CRITICA = "critica"
+
+
+class ImpactoOcorrencia(Enum):
+    OPERACAO = "operacao"
+    RECURSO = "recurso"
+    SEGURANCA = "seguranca"
+    AMBIENTAL = "ambiental"
+    OUTRO = "outro"
+
+
+class TipoOcorrencia(Enum):
+    EQUIPAMENTO_QUEBRADO = auto()
+    DOCUMENTACAO_IRREGULAR = auto()
+    CARGA_DIVERGENTE = auto()
+    ACIDENTE = auto()
+    AREA_INTERDITADA = auto()
+    ATRASO = auto()
+    CANCELAMENTO = auto()
+
+
+class FuncaoFuncionario(Enum):
+    RECEPCAO = auto()
+    INSPETOR = auto()
+    OPERADOR = auto()
+    SUPERVISOR = auto()
+    ADMINISTRADOR = auto()
+
+
+class TipoEvento(Enum):
+    MUDANCA_ESTADO = auto()
+    ALOCACAO_RECURSO = auto()
+    OCORRENCIA = auto()
+    INSPECAO = auto()
+    OPERACAO_INICIADA = auto()
+    OPERACAO_FINALIZADA = auto()
+
+
+@dataclass(frozen=True)
+class Motorista:
+    id: UUID
+    nome: str
+    documento: str
+
+    def __post_init__(self) -> None:
+        if not self.nome.strip() or not self.documento.strip():
+            raise ErroDeDominio("Motorista exige nome e documento.")
+
+
+@dataclass(frozen=True)
+class Transportadora:
+    id: UUID
+    nome: str
+
+    def __post_init__(self) -> None:
+        if not self.nome.strip():
+            raise ErroDeDominio("Transportadora exige nome.")
+
+
+@dataclass
+class Caminhao:
+    id: UUID
+    placa: str
+    motorista: Motorista
+    transportadora: Transportadora
+
+    def __post_init__(self) -> None:
+        self.placa = self.placa.strip().upper()
+        if not self.placa:
+            raise ErroDeDominio("Caminhão exige placa.")
+
+
+@dataclass(frozen=True)
+class Carga:
+    descricao: str
+    caracteristicas: frozenset[CaracteristicaCarga]
+
+    def __post_init__(self) -> None:
+        if not self.descricao.strip() or not self.caracteristicas:
+            raise ErroDeDominio("Carga exige descrição e ao menos uma característica.")
+        if (CaracteristicaCarga.COMUM in self.caracteristicas
+                and len(self.caracteristicas) > 1):
+            raise ErroDeDominio("Carga comum não pode ser combinada com outras características.")
+
+
+@dataclass(frozen=True)
+class Funcionario:
+    id: UUID
+    nome: str
+    funcao: FuncaoFuncionario
+    habilitacoes: frozenset[str] = frozenset()
+
+    def habilitado_para(self, habilitacao: str) -> bool:
+        return habilitacao in self.habilitacoes
+
+
+@dataclass(frozen=True)
+class EventoHistorico:
+    """Registro append-only; a coleção da operação não expõe mutação."""
+
+    id: UUID
+    tipo: TipoEvento
+    ocorrido_em: datetime
+    responsavel_id: UUID
+    descricao: str
+    estado_anterior: EstadoCaminhao | None = None
+    estado_novo: EstadoCaminhao | None = None
+
+
+@dataclass
+class Area:
+    id: UUID
+    nome: str
+    autorizada_carga_perigosa: bool = False
+    refrigerada: bool = False
+    interditada: bool = False
+
+
+@dataclass
+class Vaga:
+    id: UUID
+    area: Area
+    estado: EstadoRecurso = EstadoRecurso.LIVRE
+    operacao_id: UUID | None = None
+
+
+@dataclass
+class Doca:
+    id: UUID
+    area: Area
+    tipo: TipoOperacao | None = None
+    estado: EstadoRecurso = EstadoRecurso.LIVRE
+    operacao_id: UUID | None = None
+
+
+@dataclass
+class Equipamento:
+    id: UUID
+    nome: str
+    tipos_compativeis: frozenset[TipoOperacao]
+    aceita_carga_fragil: bool = False
+    estado: EstadoRecurso = EstadoRecurso.DISPONIVEL
+    operacao_id: UUID | None = None
+
+    def compativel(self, carga: Carga, tipo: TipoOperacao) -> bool:
+        if self.estado is not EstadoRecurso.DISPONIVEL or tipo not in self.tipos_compativeis:
+            return False
+        return (CaracteristicaCarga.FRAGIL not in carga.caracteristicas
+                or self.aceita_carga_fragil)
+
+
+@dataclass(frozen=True)
+class PoliticaFila:
+    """Strategy: pesos podem ser trocados sem alterar a fila ou as operações."""
+
+    pesos: dict[CaracteristicaCarga, float]
+    bonus_por_minuto: float
+
+    def pontuacao(self, carga: Carga, chegada: datetime, instante: datetime) -> float:
+        prioridade = sum(self.pesos.get(item, 0.0) for item in carga.caracteristicas)
+        minutos = max(0.0, (instante - chegada).total_seconds() / 60)
+        return prioridade + minutos * self.bonus_por_minuto
+
+
+@dataclass(frozen=True)
+class ItemFila:
+    operacao_id: UUID
+    posicao: int
+    espera_minutos: float
+    pontuacao: float
+    fatores: tuple[str, ...]
+
+
+class FilaAtendimento:
+    def __init__(self, politica: PoliticaFila) -> None:
+        self._politica = politica
+
+    def ordenar(self, operacoes: Iterable[Operacao], instante: datetime | None = None) -> list[ItemFila]:
+        agora = instante or agora_utc()
+        aguardando = [op for op in operacoes if op.estado in {
+            EstadoCaminhao.AGUARDANDO_ENTRADA,
+            EstadoCaminhao.NO_PATIO,
+            EstadoCaminhao.AGUARDANDO_RECURSO,
+        }]
+        aguardando.sort(key=lambda op: (
+            -self._politica.pontuacao(op.carga, op.chegada_em, agora), op.chegada_em
+        ))
+        resultado = []
+        for posicao, op in enumerate(aguardando, start=1):
+            espera = max(0.0, (agora - op.chegada_em).total_seconds() / 60)
+            fatores = tuple(
+                f"{caracteristica.value}: {self._politica.pesos.get(caracteristica, 0):g}"
+                for caracteristica in sorted(op.carga.caracteristicas, key=lambda x: x.value)
+            ) + (f"espera: {espera:.1f} min × {self._politica.bonus_por_minuto:g}",)
+            resultado.append(ItemFila(
+                op.id, posicao, espera,
+                self._politica.pontuacao(op.carga, op.chegada_em, agora), fatores,
+            ))
+        return resultado
+
+
+class ObservadorDominio(Protocol):
+    def notificar(self, evento: EventoHistorico) -> None: ...
+
+
+class EstadoOperacao(Protocol):
+    estado: EstadoCaminhao
+
+    def permite(self, destino: EstadoCaminhao) -> bool: ...
+
+
+@dataclass(frozen=True)
+class EstadoFluxo:
+    """State: cada estado define os próximos estados permitidos."""
+
+    estado: EstadoCaminhao
+    destinos: frozenset[EstadoCaminhao]
+
+    def permite(self, destino: EstadoCaminhao) -> bool:
+        return destino in self.destinos
+
+
+TRANSICOES: dict[EstadoCaminhao, EstadoFluxo] = {
+    EstadoCaminhao.AGUARDANDO_DOCUMENTACAO: EstadoFluxo(
+        EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
+        frozenset({EstadoCaminhao.AGUARDANDO_INSPECAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.AGUARDANDO_INSPECAO: EstadoFluxo(
+        EstadoCaminhao.AGUARDANDO_INSPECAO,
+        frozenset({EstadoCaminhao.AGUARDANDO_DOCUMENTACAO, EstadoCaminhao.AGUARDANDO_ENTRADA,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.AGUARDANDO_ENTRADA: EstadoFluxo(
+        EstadoCaminhao.AGUARDANDO_ENTRADA,
+        frozenset({EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
+                   EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.NO_PATIO: EstadoFluxo(
+        EstadoCaminhao.NO_PATIO,
+        frozenset({EstadoCaminhao.AGUARDANDO_RECURSO, EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.AGUARDANDO_RECURSO: EstadoFluxo(
+        EstadoCaminhao.AGUARDANDO_RECURSO,
+        frozenset({EstadoCaminhao.EM_OPERACAO, EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.EM_OPERACAO: EstadoFluxo(
+        EstadoCaminhao.EM_OPERACAO,
+        frozenset({EstadoCaminhao.AGUARDANDO_RECURSO, EstadoCaminhao.AGUARDANDO_LIBERACAO}),
+    ),
+    EstadoCaminhao.AGUARDANDO_LIBERACAO: EstadoFluxo(
+        EstadoCaminhao.AGUARDANDO_LIBERACAO, frozenset({EstadoCaminhao.FINALIZADO}),
+    ),
+    EstadoCaminhao.FINALIZADO: EstadoFluxo(EstadoCaminhao.FINALIZADO, frozenset()),
+}
+
+
+@dataclass(frozen=True)
+class Inspecao:
+    resultado: str
+    responsavel_id: UUID
+    realizada_em: datetime = field(default_factory=agora_utc)
+
+
+@dataclass
+class Ocorrencia:
+    id: UUID
+    tipo: TipoOcorrencia
+    descricao: str
+    responsavel_id: UUID
+    criada_em: datetime = field(default_factory=agora_utc)
+    estado: EstadoOcorrencia = EstadoOcorrencia.ABERTA
+    resolvida_em: datetime | None = None
+    resolvida_por: UUID | None = None
+    severidade: SeveridadeOcorrencia = SeveridadeOcorrencia.MEDIA
+    impacto: ImpactoOcorrencia = ImpactoOcorrencia.OPERACAO
+    recurso_tipo: str | None = None
+    recurso_id: UUID | None = None
+
+    def resolver(self, responsavel: Funcionario, instante: datetime | None = None) -> None:
+        if self.estado is EstadoOcorrencia.RESOLVIDA:
+            raise ErroDeDominio("Ocorrência já está resolvida.")
+        self.estado = EstadoOcorrencia.RESOLVIDA
+        self.resolvida_por = responsavel.id
+        self.resolvida_em = instante or agora_utc()
+
+
+@dataclass
+class Operacao:
+    id: UUID
+    caminhao: Caminhao
+    carga: Carga
+    tipo: TipoOperacao
+    chegada_em: datetime = field(default_factory=agora_utc)
+    estado: EstadoCaminhao = EstadoCaminhao.AGUARDANDO_DOCUMENTACAO
+    documentacao_regular: bool = False
+    vaga: Vaga | None = None
+    doca: Doca | None = None
+    equipamento: Equipamento | None = None
+    funcionario_responsavel_id: UUID | None = None
+    iniciada_em: datetime | None = None
+    finalizada_em: datetime | None = None
+    cancelada: bool = False
+    motivo_cancelamento: str | None = None
+    _historico: list[EventoHistorico] = field(default_factory=list, repr=False)
+    _ocorrencias: list[Ocorrencia] = field(default_factory=list, repr=False)
+    _inspecoes: list[Inspecao] = field(default_factory=list, repr=False)
+    _observadores: list[ObservadorDominio] = field(default_factory=list, repr=False)
+
+    @property
+    def historico(self) -> tuple[EventoHistorico, ...]:
+        return tuple(self._historico)
+
+    @property
+    def ocorrencias(self) -> tuple[Ocorrencia, ...]:
+        return tuple(self._ocorrencias)
+
+    @property
+    def inspecoes(self) -> tuple[Inspecao, ...]:
+        return tuple(self._inspecoes)
+
+    @property
+    def acoes_permitidas(self) -> tuple[str, ...]:
+        por_estado = {
+            EstadoCaminhao.AGUARDANDO_DOCUMENTACAO: ("documentation", "cancel"),
+            EstadoCaminhao.AGUARDANDO_INSPECAO: ("inspection", "cancel"),
+            EstadoCaminhao.AGUARDANDO_ENTRADA: ("yard-entry", "cancel"),
+            EstadoCaminhao.NO_PATIO: ("start", "interrupt", "cancel"),
+            EstadoCaminhao.AGUARDANDO_RECURSO: ("start", "interrupt", "cancel"),
+            EstadoCaminhao.EM_OPERACAO: ("finish", "interrupt"),
+            EstadoCaminhao.AGUARDANDO_LIBERACAO: ("release",),
+            EstadoCaminhao.FINALIZADO: (),
+        }
+        return por_estado[self.estado]
+
+    def adicionar_observador(self, observador: ObservadorDominio) -> None:
+        self._observadores.append(observador)
+
+    def _registrar_evento(
+        self, tipo: TipoEvento, responsavel: Funcionario, descricao: str,
+        instante: datetime, anterior: EstadoCaminhao | None = None,
+        novo: EstadoCaminhao | None = None,
+    ) -> None:
+        evento = EventoHistorico(uuid4(), tipo, instante, responsavel.id,
+                                 descricao, anterior, novo)
+        self._historico.append(evento)
+        for observador in tuple(self._observadores):
+            observador.notificar(evento)
+
+    def _mudar_estado(
+        self, destino: EstadoCaminhao, responsavel: Funcionario,
+        instante: datetime | None = None,
+    ) -> None:
+        fluxo = TRANSICOES[self.estado]
+        if not fluxo.permite(destino):
+            raise ErroDeDominio(
+                f"Transição inválida: {self.estado.name} → {destino.name}."
+            )
+        anterior = self.estado
+        self.estado = destino
+        self.funcionario_responsavel_id = responsavel.id
+        self._registrar_evento(TipoEvento.MUDANCA_ESTADO, responsavel,
+                               f"Estado alterado para {destino.name}.",
+                               instante or agora_utc(), anterior, destino)
+
+    def validar_documentacao(self, regular: bool, responsavel: Funcionario,
+                             instante: datetime | None = None) -> None:
+        if self.estado is not EstadoCaminhao.AGUARDANDO_DOCUMENTACAO:
+            raise ErroDeDominio("Documentação só pode ser validada na triagem.")
+        self.documentacao_regular = regular
+        if regular:
+            self._mudar_estado(EstadoCaminhao.AGUARDANDO_ENTRADA, responsavel, instante)
+        else:
+            self.registrar_ocorrencia(TipoOcorrencia.DOCUMENTACAO_IRREGULAR,
+                                      "Documentação irregular na chegada.", responsavel, instante)
+
+    def registrar_inspecao(self, resultado: str, responsavel: Funcionario,
+                           aprovado: bool, instante: datetime | None = None) -> None:
+        if self.estado is not EstadoCaminhao.AGUARDANDO_INSPECAO:
+            raise ErroDeDominio("Caminhão não está aguardando inspeção.")
+        quando = instante or agora_utc()
+        self._inspecoes.append(Inspecao(resultado, responsavel.id, quando))
+        self._registrar_evento(TipoEvento.INSPECAO, responsavel, resultado, quando)
+        self._mudar_estado(
+            EstadoCaminhao.AGUARDANDO_ENTRADA if aprovado
+            else EstadoCaminhao.AGUARDANDO_DOCUMENTACAO,
+            responsavel, quando,
+        )
+
+    def registrar_ocorrencia(self, tipo: TipoOcorrencia, descricao: str,
+                             responsavel: Funcionario,
+                             instante: datetime | None = None) -> Ocorrencia:
+        ocorrencia = Ocorrencia(uuid4(), tipo, descricao, responsavel.id,
+                                instante or agora_utc())
+        self._ocorrencias.append(ocorrencia)
+        self.funcionario_responsavel_id = responsavel.id
+        self._registrar_evento(TipoEvento.OCORRENCIA, responsavel, descricao,
+                               ocorrencia.criada_em)
+        return ocorrencia
+
+    def interromper(self, descricao: str, responsavel: Funcionario,
+                    equipamento_quebrado: bool = False,
+                    instante: datetime | None = None,
+                    severidade: SeveridadeOcorrencia = SeveridadeOcorrencia.MEDIA,
+                    impacto: ImpactoOcorrencia = ImpactoOcorrencia.OPERACAO,
+                    recurso_tipo: str | None = None,
+                    recurso_id: UUID | None = None) -> None:
+        if self.estado not in {EstadoCaminhao.NO_PATIO, EstadoCaminhao.AGUARDANDO_RECURSO,
+                               EstadoCaminhao.EM_OPERACAO}:
+            raise ErroDeDominio("Só é possível interromper uma operação no pátio ou em andamento.")
+        tipo = (TipoOcorrencia.EQUIPAMENTO_QUEBRADO if equipamento_quebrado
+                else TipoOcorrencia.ATRASO)
+        ocorrencia = self.registrar_ocorrencia(tipo, descricao, responsavel, instante)
+        ocorrencia.severidade = severidade
+        ocorrencia.impacto = impacto
+        ocorrencia.recurso_tipo = recurso_tipo
+        ocorrencia.recurso_id = recurso_id
+        if equipamento_quebrado and self.equipamento:
+            self.equipamento.estado = EstadoRecurso.EM_MANUTENCAO
+        # O caminhão permanece na vaga do pátio enquanto aguarda outro conjunto de recursos.
+        self.liberar_recursos(manter_vaga=True)
+        if self.estado is EstadoCaminhao.EM_OPERACAO:
+            self._mudar_estado(EstadoCaminhao.AGUARDANDO_RECURSO, responsavel, instante)
+
+    def liberar_recursos(self, manter_vaga: bool = False) -> None:
+        if self.vaga and not manter_vaga:
+            self.vaga.estado = EstadoRecurso.LIVRE
+            self.vaga.operacao_id = None
+            self.vaga = None
+        if self.doca:
+            self.doca.estado = EstadoRecurso.LIVRE
+            self.doca.operacao_id = None
+            self.doca = None
+        if self.equipamento:
+            if self.equipamento.estado is EstadoRecurso.OCUPADO:
+                self.equipamento.estado = EstadoRecurso.DISPONIVEL
+            self.equipamento.operacao_id = None
+            self.equipamento = None
+
+    def cancelar(self, motivo: str, responsavel: Funcionario,
+                 instante: datetime | None = None) -> None:
+        if not motivo.strip():
+            raise ErroDeDominio("Cancelamento exige motivo.")
+        if self.estado in {EstadoCaminhao.FINALIZADO,
+                           EstadoCaminhao.AGUARDANDO_LIBERACAO}:
+            raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
+        if not TRANSICOES[self.estado].permite(EstadoCaminhao.AGUARDANDO_LIBERACAO):
+            raise ErroDeDominio("Operação não pode ser cancelada neste estado.")
+        self.cancelada = True
+        self.motivo_cancelamento = motivo
+        self.registrar_ocorrencia(TipoOcorrencia.CANCELAMENTO, motivo, responsavel, instante)
+        self.liberar_recursos()
+        self._mudar_estado(EstadoCaminhao.AGUARDANDO_LIBERACAO, responsavel, instante)
+
+
+class AlocadorDeRecursos:
+    """Coordena alocação conjunta; reverte reservas se não houver conjunto completo."""
+
+    def alocar_e_iniciar(
+        self, operacao: Operacao, vagas: list[Vaga], docas: list[Doca],
+        equipamentos: list[Equipamento], funcionario: Funcionario,
+        area_requerida_para_perigosa: bool = True,
+        instante: datetime | None = None,
+    ) -> bool:
+        if operacao.estado not in {EstadoCaminhao.NO_PATIO,
+                                   EstadoCaminhao.AGUARDANDO_RECURSO}:
+            raise ErroDeDominio("Caminhão precisa estar no pátio ou aguardando recurso.")
+        if funcionario.funcao is not FuncaoFuncionario.OPERADOR:
+            raise ErroDeDominio("Funcionário não tem função de operador.")
+        precisa = "carga" if operacao.tipo is TipoOperacao.CARGA else "descarga"
+        if not funcionario.habilitado_para(precisa):
+            raise ErroDeDominio(f"Funcionário não está habilitado para {precisa}.")
+
+        perigosa = CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
+        refrigerada = CaracteristicaCarga.REFRIGERADA in operacao.carga.caracteristicas
+        vaga_atual = operacao.vaga
+        vaga_atual_valida = bool(
+            vaga_atual and vaga_atual in vagas
+            and vaga_atual.estado is EstadoRecurso.OCUPADO
+            and vaga_atual.operacao_id == operacao.id
+            and not vaga_atual.area.interditada
+            and (not refrigerada or vaga_atual.area.refrigerada)
+            and (not perigosa or not area_requerida_para_perigosa
+                 or vaga_atual.area.autorizada_carga_perigosa)
+        )
+        vaga = vaga_atual if vaga_atual_valida else next((v for v in vagas if v.estado is EstadoRecurso.LIVRE
+                     and not v.area.interditada
+                     and (not refrigerada or v.area.refrigerada)
+                     and (not perigosa or not area_requerida_para_perigosa
+                          or v.area.autorizada_carga_perigosa)), None)
+        doca = next((d for d in docas if d.estado is EstadoRecurso.LIVRE
+                     and not d.area.interditada and d.tipo in (None, operacao.tipo)
+                     and (not refrigerada or d.area.refrigerada)
+                     and (not perigosa or not area_requerida_para_perigosa
+                          or d.area.autorizada_carga_perigosa)), None)
+        equipamento = next((e for e in equipamentos
+                            if e.compativel(operacao.carga, operacao.tipo)), None)
+        if vaga is None or doca is None or equipamento is None:
+            if operacao.estado is EstadoCaminhao.NO_PATIO:
+                operacao._mudar_estado(EstadoCaminhao.AGUARDANDO_RECURSO, funcionario, instante)
+            return False
+
+        # Commit das reservas ocorre apenas depois da validação do conjunto completo.
+        quando = instante or agora_utc()
+        if operacao.vaga and operacao.vaga is not vaga:
+            operacao.vaga.estado = EstadoRecurso.LIVRE
+            operacao.vaga.operacao_id = None
+        vaga.estado = EstadoRecurso.OCUPADO
+        vaga.operacao_id = operacao.id
+        doca.estado = EstadoRecurso.OCUPADO
+        doca.operacao_id = operacao.id
+        equipamento.estado = EstadoRecurso.OCUPADO
+        equipamento.operacao_id = operacao.id
+        operacao.vaga, operacao.doca, operacao.equipamento = vaga, doca, equipamento
+        operacao._registrar_evento(TipoEvento.ALOCACAO_RECURSO, funcionario,
+                                   "Vaga, doca e equipamento alocados.", quando)
+        operacao._mudar_estado(EstadoCaminhao.EM_OPERACAO, funcionario, quando)
+        operacao.iniciada_em = operacao.iniciada_em or quando
+        operacao._registrar_evento(TipoEvento.OPERACAO_INICIADA, funcionario,
+                                   "Operação iniciada.", quando)
+        return True
+
+
+class RepositorioOperacao(Protocol):
+    """Porta de Repository; SQLite/PostgreSQL ficam fora do domínio."""
+
+    def salvar(self, operacao: Operacao) -> None: ...
+    def obter(self, operacao_id: UUID) -> Operacao | None: ...
+
+
+class FabricaOperacao:
+    """Factory para iniciar uma operação com estado coerente."""
+
+    @staticmethod
+    def criar(caminhao: Caminhao, carga: Carga, tipo: TipoOperacao,
+              documentacao_regular: bool = False,
+              exige_inspecao: bool = False,
+              chegada_em: datetime | None = None) -> Operacao:
+        estado = (EstadoCaminhao.AGUARDANDO_DOCUMENTACAO
+                  if not documentacao_regular else
+                  EstadoCaminhao.AGUARDANDO_INSPECAO if exige_inspecao else
+                  EstadoCaminhao.AGUARDANDO_ENTRADA)
+        return Operacao(uuid4(), caminhao, carga, tipo,
+                        chegada_em or agora_utc(), estado,
+                        documentacao_regular=documentacao_regular)
+
+
+class ServicoDominioTerminal:
+    """Facade simples para ações comuns do agregado Operacao."""
+
+    def __init__(self, alocador: AlocadorDeRecursos | None = None) -> None:
+        self._alocador = alocador or AlocadorDeRecursos()
+
+    def autorizar_entrada(self, operacao: Operacao, vaga: Vaga,
+                          responsavel: Funcionario,
+                          instante: datetime | None = None) -> None:
+        if operacao.estado is not EstadoCaminhao.AGUARDANDO_ENTRADA:
+            raise ErroDeDominio("Operação não está liberada para entrada.")
+        if (vaga.estado is not EstadoRecurso.LIVRE or vaga.area.interditada
+                or (CaracteristicaCarga.REFRIGERADA in operacao.carga.caracteristicas
+                    and not vaga.area.refrigerada)
+                or (CaracteristicaCarga.PERIGOSA in operacao.carga.caracteristicas
+                    and not vaga.area.autorizada_carga_perigosa)):
+            raise ErroDeDominio("Vaga indisponível ou inadequada para a carga.")
+        vaga.estado, vaga.operacao_id = EstadoRecurso.OCUPADO, operacao.id
+        operacao.vaga = vaga
+        operacao._registrar_evento(TipoEvento.ALOCACAO_RECURSO, responsavel,
+                                   "Vaga de pátio alocada na entrada.", instante or agora_utc())
+        operacao._mudar_estado(EstadoCaminhao.NO_PATIO, responsavel, instante)
+
+    def iniciar_operacao(self, operacao: Operacao, vagas: list[Vaga],
+                         docas: list[Doca], equipamentos: list[Equipamento],
+                         funcionario: Funcionario,
+                         instante: datetime | None = None) -> bool:
+        return self._alocador.alocar_e_iniciar(
+            operacao, vagas, docas, equipamentos, funcionario, instante=instante
+        )
+
+    def finalizar_operacao(self, operacao: Operacao, responsavel: Funcionario,
+                           instante: datetime | None = None) -> None:
+        if operacao.estado is not EstadoCaminhao.EM_OPERACAO:
+            raise ErroDeDominio("Somente uma operação em andamento pode ser finalizada.")
+        quando = instante or agora_utc()
+        operacao.liberar_recursos()
+        operacao.finalizada_em = quando
+        operacao._mudar_estado(EstadoCaminhao.AGUARDANDO_LIBERACAO, responsavel, quando)
+        operacao._registrar_evento(TipoEvento.OPERACAO_FINALIZADA, responsavel,
+                                   "Operação concluída; aguardando liberação do caminhão.", quando)
+
+    def liberar_caminhao(self, operacao: Operacao, responsavel: Funcionario,
+                         instante: datetime | None = None) -> None:
+        if operacao.estado is not EstadoCaminhao.AGUARDANDO_LIBERACAO:
+            raise ErroDeDominio("Caminhão não está aguardando liberação.")
+        operacao.liberar_recursos()
+        operacao._mudar_estado(EstadoCaminhao.FINALIZADO, responsavel, instante)
+
+
+class ObservadorCallback:
+    """Adapter Observer para integrar notificações com outra camada."""
+
+    def __init__(self, callback: Callable[[EventoHistorico], None]) -> None:
+        self._callback = callback
+
+    def notificar(self, evento: EventoHistorico) -> None:
+        self._callback(evento)
+
+
+def demonstracao_minima() -> Operacao:
+    """Exemplo executável de criação, triagem e chegada ao pátio."""
+    motorista = Motorista(uuid4(), "Ana Souza", "00000000000")
+    transportadora = Transportadora(uuid4(), "Transporte Exemplo")
+    caminhao = Caminhao(uuid4(), "ABC1D23", motorista, transportadora)
+    carga = Carga("Paletes de alimentos", frozenset({CaracteristicaCarga.REFRIGERADA}))
+    recepcionista = Funcionario(uuid4(), "João", FuncaoFuncionario.RECEPCAO)
+    operacao = FabricaOperacao.criar(caminhao, carga, TipoOperacao.DESCARGA)
+    operacao.validar_documentacao(True, recepcionista)
+    area = Area(uuid4(), "Pátio refrigerado", refrigerada=True)
+    vaga = Vaga(uuid4(), area)
+    ServicoDominioTerminal().autorizar_entrada(operacao, vaga, recepcionista)
+    return operacao
+
+
+if __name__ == "__main__":
+    exemplo = demonstracao_minima()
+    print(f"Operação {exemplo.id}: {exemplo.estado.name}")
+    print(f"Eventos de histórico: {len(exemplo.historico)}")
