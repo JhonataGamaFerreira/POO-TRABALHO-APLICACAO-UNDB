@@ -189,6 +189,17 @@ uvicorn api:app --reload
 
 Documentação interativa: http://127.0.0.1:8000/docs
 
+### Publicar o backend no Vercel
+
+O projeto exporta a aplicação FastAPI pelo `index.py`, arquivo de entrada reconhecido pelo runtime Python do Vercel. O `requirements.txt` lista as dependências e `.python-version` fixa o runtime em Python 3.12. Não é necessário `vercel.json` para este backend isolado.
+
+1. Envie estes arquivos para o branch do GitHub que será implantado: `api.py`, `index.py`, `main.py`, `requirements.txt`, `.python-version` e `.gitignore` (inclua também `backend` e `README.md` se for manter a cópia do domínio e a documentação sincronizadas).
+2. No Vercel, importe o repositório e selecione a pasta raiz do backend como **Root Directory**. Este repositório não contém o front-end Next.js; implante o frontend como outro projeto ou serviço.
+3. Em **Environment Variables**, configure `CORS_ORIGINS` com os domínios do frontend separados por vírgula, por exemplo `https://meu-front.vercel.app`. Para chamadas no mesmo domínio essa variável pode ficar sem configuração.
+4. Faça o deploy. A raiz `/` retorna informações do serviço, `/docs` abre o Swagger e `/api/health` verifica a API.
+
+**Limitação atual:** os dados são mantidos em memória. No Vercel, instâncias podem reiniciar ou atender requisições separadamente; portanto os registros não são persistentes nem compartilhados. O deploy é adequado para demonstração da API, e a persistência real deve ser conectada antes de usar o sistema com dados de operação.
+
 ### Endpoints disponíveis
 
 | Método | Rota | Descrição |

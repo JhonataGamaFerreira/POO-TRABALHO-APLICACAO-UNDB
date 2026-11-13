@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
+import os
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -26,9 +27,13 @@ app = FastAPI(
     description="API REST em memória; os dados são apagados ao reiniciar o processo.",
     version="1.0.0",
 )
+origens_cors = [origem.strip() for origem in os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+).split(",") if origem.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=origens_cors,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -260,6 +265,16 @@ async def erro_de_validacao_de_dominio_handler(_request, exc: ValueError):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "armazenamento": "memoria"}
+
+
+@app.get("/")
+def raiz():
+    return {
+        "servico": "API do Terminal Portuário",
+        "documentacao": "/docs",
+        "health": "/api/health",
+        "armazenamento": "memoria",
+    }
 
 
 @app.post("/api/areas", status_code=201)
